@@ -61,11 +61,16 @@ import android.os.Process as AndroidProcess
  * thread, not the main thread.
  * @param parentCall Used for determining the output filename. References to it and its children are
  * kept in the object.
+ * @param forceImmediateStart If true, always begin recording unpaused, ignoring whatever initial
+ * state ("paused, until manually resumed") the matching record rule specifies. Used when the user
+ * explicitly starts a recording via the floating bubble - an explicit "start" action should always
+ * start recording right away, never land in a paused state the user didn't ask for.
  */
 class RecorderThread(
     private val context: Context,
     private val listener: OnRecordingCompletedListener,
     private val parentCall: Call,
+    private val forceImmediateStart: Boolean = false,
 ) : Thread(RecorderThread::class.java.simpleName) {
     private val tag = "${RecorderThread::class.java.simpleName}/$threadIdCompat"
     private val prefs = Preferences(context)
@@ -239,7 +244,7 @@ class RecorderThread(
             },
         )
 
-        isPaused = initialState == RecordRule.InitialState.PAUSED
+        isPaused = !forceImmediateStart && initialState == RecordRule.InitialState.PAUSED
 
         listener.onRecordingStateChanged(this)
     }

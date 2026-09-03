@@ -11,7 +11,7 @@
     <string name="pref_header_debug">调试</string>
 
     <!-- General preferences -->
-    <string name="pref_call_recording_name">通话录音</string>
+    <string name="pref_call_recording_name">通话自动录音</string>
     <string name="pref_call_recording_desc">录制来电和去电。后台录音需要麦克风和通知权限</string>
 
     <string name="pref_record_rules_name">自动录音规则</string>
@@ -43,6 +43,23 @@
 
     <string name="pref_show_launcher_icon_name">显示图标</string>
     <string name="pref_show_launcher_icon_desc">隐藏图标时，请在拨号盘输入 <b>*#*#227#*#*</b> 以打开此应用</string>
+
+    <string name="pref_floating_button_name">通话悬浮录音球</string>
+    <string name="pref_floating_button_desc">通话时显示一个可拖动的悬浮球，球下面会带一行小字提示点击后的效果。点击ⓘ查看详细说明。</string>
+    <string name="pref_floating_button_help_content_description">通话悬浮录音球说明</string>
+    <string name="pref_floating_button_help_title">通话悬浮录音球</string>
+    <string name="pref_floating_button_help_body">通话时显示一个可拖动的悬浮球，点击即可手动开始/暂停/恢复录音（跟通知栏的暂停/恢复按钮是同一个功能，方便在锁屏等无法下拉通知栏时使用）。首次使用请先开启一次本开关和"通话自动录音"，并按提示授予录音、悬浮窗等权限，否则悬浮球不会显示或不生效。\n\n悬浮球状态说明：\n🟢 绿色（未录音，点击开始）\n🔴 红色（录音中，点击暂停）\n\n由于"悬浮球"功能原版软件没有，是新增出来的功能，和原版软件"通话自动录音"/"自动录音规则"的设置组合在一起后关系比较绕，请实际测试确认符合预期后再正式使用，以免录音不成功。</string>
+    <string name="floating_bubble_label_not_recording">点击开始录音</string>
+    <string name="floating_bubble_label_recording">点击暂停录音</string>
+
+    <!-- Backup preferences -->
+    <string name="pref_header_backup">备份</string>
+
+    <string name="pref_backup_settings_name">备份设置</string>
+    <string name="pref_backup_settings_desc">将全部应用设置保存到文件</string>
+
+    <string name="pref_restore_settings_name">恢复设置</string>
+    <string name="pref_restore_settings_desc">从之前保存的文件恢复全部应用设置</string>
 
     <!-- About "preference" -->
     <string name="pref_version_name">软件版本</string>
@@ -235,6 +252,12 @@
     <!-- Snackbar alerts -->
     <string name="alert_logcat_success">日志已成功保存至 %1$s</string>
     <string name="alert_logcat_failure">无法保存日志至 %1$s：%2$s</string>
+
+    <string name="alert_backup_success">已成功备份设置至 %1$s</string>
+    <string name="alert_backup_failure">无法备份设置至 %1$s：%2$s</string>
+    <string name="alert_restore_success">已成功从 %1$s 恢复设置</string>
+    <string name="alert_restore_success_output_dir_needs_reselect">已从 %1$s 恢复设置，但录音保存目录的访问权限已失效（很可能是因为重装过 App 或清除过数据），需要重新选择一次</string>
+    <string name="alert_restore_failure">无法从 %1$s 恢复设置：%2$s</string>
     <string name="alert_contact_group_query_failure">查询联系人分组失败：%1$s</string>
 
     <!-- Notifications -->

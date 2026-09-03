@@ -1,0 +1,104 @@
+name: Build APK
+
+on:
+  push:
+  workflow_dispatch:
+
+jobs:
+  build-apk:
+    name: Build debug APK
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+
+      - name: Set up JDK 21
+        uses: actions/setup-java@b6effb05e454b25005698d916606bdc6ffcbf961 # v5.7.0
+        with:
+          distribution: 'temurin'
+          java-version: 21
+          cache: gradle
+
+      - name: Grant execute permission for gradlew
+        run: chmod +x gradlew
+
+      - name: Restore fixed debug keystore
+        # GitHub Actions 每次都是全新的虚拟机，如果不固定这个 keystore，Gradle 会在
+        # 每次构建时自动生成一个新的随机 debug 证书，导致用户升级时因签名不一致
+        # 而安装失败（必须先卸载旧版）。这里用仓库 Secret 里存的固定证书覆盖默认值，
+        # 保证同一个 fork 发布的所有版本签名始终一致，可以正常覆盖升级。
+        run: |
+          mkdir -p ~/.android
+          echo "${{ secrets.DEBUG_KEYSTORE_BASE64 }}" | base64 -d > ~/.android/debug.keystore
+
+      - name: Build debug APK
+        # The debug build is signed with the fixed debug keystore restored above (not a
+        # random per-run one), so it can be installed directly on a device and upgraded
+        # in place without needing a release signing key.
+        run: ./gradlew --no-daemon assembleDebug
+
+      - name: Locate APK
+        id: locate
+        run: |
+          apk=$(find app/build/outputs/apk/debug -name '*.apk' | head -n 1)
+          echo "Found APK: ${apk}"
+          echo "path=${apk}" >> "${GITHUB_OUTPUT}"
+
+      - name: Upload APK artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: BCR-debug-apk
+          path: ${{ steps.locate.outputs.path }}
+          if-no-files-found: error
+
+  release:
+    name: Publish Magisk module zip as a Release
+    # 只有推送的是 v 开头的 tag（例如 v3.7-mod07）才会跑这个任务，
+    # 平时普通 push 到分支不会触发发布，只会跑上面的 build-apk 做编译验证。
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write   # 创建 Release 需要这个写权限
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0   # 版本号是根据 git tag 推算的，需要完整历史
+
+      - name: Set up JDK 21
+        uses: actions/setup-java@b6effb05e454b25005698d916606bdc6ffcbf961 # v5.7.0
+        with:
+          distribution: 'temurin'
+          java-version: 21
+          cache: gradle
+
+      - name: Grant execute permission for gradlew
+        run: chmod +x gradlew
+
+      - name: Restore fixed debug keystore
+        # 同上：release job 单独跑在另一台全新虚拟机上，也需要恢复同一个固定证书，
+        # 否则这个 job 打出来的 zip 和 build-apk job 打出来的 APK 签名又会对不上。
+        run: |
+          mkdir -p ~/.android
+          echo "${{ secrets.DEBUG_KEYSTORE_BASE64 }}" | base64 -d > ~/.android/debug.keystore
+
+      - name: Build debug-signed Magisk module zip
+        # zipDebug 是仓库原有的 Gradle 任务：把 debug 签名的 apk 和
+        # app/magisk 下的安装脚本一起打包成可以直接刷入 Magisk 的 zip，
+        # 跟手动放进 Magisk 里的模块包是同一种东西。
+        run: ./gradlew --no-daemon zipDebug
+
+      - name: Locate Magisk module zip
+        id: locate
+        run: |
+          zip_path=$(find app/build -iname '*-debug.zip' | head -n 1)
+          echo "Found zip: ${zip_path}"
+          echo "path=${zip_path}" >> "${GITHUB_OUTPUT}"
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: ${{ steps.locate.outputs.path }}
+          generate_release_notes: true

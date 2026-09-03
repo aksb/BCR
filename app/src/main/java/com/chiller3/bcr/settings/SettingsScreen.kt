@@ -10,11 +10,24 @@ import android.content.Intent
 import android.content.res.Configuration
 import android.net.Uri
 import android.provider.DocumentsContract
+import android.provider.Settings
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
+import androidx.compose.material3.IconButton
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -23,11 +36,15 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalResources
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.clearAndSetSemantics
+import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.tooling.preview.Preview
+import androidx.compose.ui.unit.dp
 import androidx.core.net.toUri
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.viewmodel.compose.viewModel
@@ -75,6 +92,7 @@ fun SettingsScreen(viewModel: SettingsViewModel = viewModel()) {
     val recordDialingState = remember(reloadPrefs) { prefs.recordDialingState }
     val notificationOpenDir = remember(reloadPrefs) { prefs.notificationOpenDir }
     val showLauncherIcon = remember(reloadPrefs) { prefs.showLauncherIcon }
+    val floatingButtonEnabled = remember(reloadPrefs) { prefs.floatingButtonEnabled }
     val isDebugMode = remember(reloadPrefs) { prefs.isDebugMode }
     val forceDirectBoot = remember(reloadPrefs) { prefs.forceDirectBoot }
 
@@ -99,6 +117,24 @@ fun SettingsScreen(viewModel: SettingsViewModel = viewModel()) {
     ) { uri ->
         uri?.let { viewModel.saveLogs(it) }
     }
+    val requestSafBackup = rememberLauncherForActivityResult(
+        ActivityResultContracts.CreateDocument("application/json"),
+    ) { uri ->
+        uri?.let { viewModel.backupSettings(context, it) }
+    }
+    val requestSafRestore = rememberLauncherForActivityResult(
+        ActivityResultContracts.OpenDocument(),
+    ) { uri ->
+        uri?.let { viewModel.restoreSettings(context, it) { reloadPrefs++ } }
+    }
+    val requestOverlayPermission = rememberLauncherForActivityResult(
+        ActivityResultContracts.StartActivityForResult(),
+    ) {
+        if (Settings.canDrawOverlays(context)) {
+            prefs.floatingButtonEnabled = true
+        }
+        reloadPrefs++
+    }
 
     AppScreen(
         title = { Text(text = stringResource(R.string.app_name_full)) },
@@ -113,6 +149,28 @@ fun SettingsScreen(viewModel: SettingsViewModel = viewModel()) {
                     )
                     is SettingsAlert.LogcatFailed -> resources.getString(
                         R.string.alert_logcat_failure,
+                        alert.uri.formattedString,
+                        alert.error,
+                    )
+                    is SettingsAlert.BackupSucceeded -> resources.getString(
+                        R.string.alert_backup_success,
+                        alert.uri.formattedString,
+                    )
+                    is SettingsAlert.BackupFailed -> resources.getString(
+                        R.string.alert_backup_failure,
+                        alert.uri.formattedString,
+                        alert.error,
+                    )
+                    is SettingsAlert.RestoreSucceeded -> resources.getString(
+                        R.string.alert_restore_success,
+                        alert.uri.formattedString,
+                    )
+                    is SettingsAlert.RestoreSucceededOutputDirNeedsReselect -> resources.getString(
+                        R.string.alert_restore_success_output_dir_needs_reselect,
+                        alert.uri.formattedString,
+                    )
+                    is SettingsAlert.RestoreFailed -> resources.getString(
+                        R.string.alert_restore_failure,
                         alert.uri.formattedString,
                         alert.error,
                     )
@@ -138,6 +196,7 @@ fun SettingsScreen(viewModel: SettingsViewModel = viewModel()) {
             recordDialingState = recordDialingState,
             notificationOpenDir = notificationOpenDir,
             showLauncherIcon = showLauncherIcon,
+            floatingButtonEnabled = floatingButtonEnabled,
             isDebugMode = isDebugMode,
             forceDirectBoot = forceDirectBoot,
             onCallRecordingChange = { enabled ->
@@ -189,6 +248,28 @@ fun SettingsScreen(viewModel: SettingsViewModel = viewModel()) {
                 prefs.showLauncherIcon = enabled
                 reloadPrefs++
             },
+            onFloatingButtonChange = { enabled ->
+                if (!enabled) {
+                    prefs.floatingButtonEnabled = false
+                    reloadPrefs++
+                } else if (Settings.canDrawOverlays(context)) {
+                    prefs.floatingButtonEnabled = true
+                    reloadPrefs++
+                } else {
+                    requestOverlayPermission.launch(
+                        Intent(
+                            Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
+                            "package:${context.packageName}".toUri(),
+                        )
+                    )
+                }
+            },
+            onBackupSettings = {
+                requestSafBackup.launch("bcr_settings_backup.json")
+            },
+            onRestoreSettings = {
+                requestSafRestore.launch(arrayOf("application/json"))
+            },
             onDebugModeChange = { enabled ->
                 prefs.isDebugMode = enabled
                 reloadPrefs++
@@ -236,6 +317,7 @@ private fun SettingsContent(
     recordDialingState: Boolean,
     notificationOpenDir: Boolean,
     showLauncherIcon: Boolean,
+    floatingButtonEnabled: Boolean,
     isDebugMode: Boolean,
     forceDirectBoot: Boolean,
     onCallRecordingChange: (Boolean) -> Unit,
@@ -249,6 +331,9 @@ private fun SettingsContent(
     onRecordDialingStateChange: (Boolean) -> Unit,
     onNotificationOpenDirChange: (Boolean) -> Unit,
     onShowLauncherIconChange: (Boolean) -> Unit,
+    onFloatingButtonChange: (Boolean) -> Unit,
+    onBackupSettings: () -> Unit,
+    onRestoreSettings: () -> Unit,
     onDebugModeChange: (Boolean) -> Unit,
     onSourceRepoOpen: () -> Unit,
     onForceDirectBootChange: (Boolean) -> Unit,
@@ -257,6 +342,8 @@ private fun SettingsContent(
     contentPadding: PaddingValues = PaddingValues(),
 ) {
     var showMinDurationDialog by rememberSaveable { mutableStateOf(false) }
+    var showFloatingButtonHelp by rememberSaveable { mutableStateOf(false) }
+    var showModInfoDialog by rememberSaveable { mutableStateOf(false) }
 
     PreferenceColumn(contentPadding = contentPadding) {
         item(key = "general") {
@@ -273,6 +360,35 @@ private fun SettingsContent(
                 shapes = BetterSegmentedShapes.top(),
                 title = { Text(text = stringResource(R.string.pref_call_recording_name)) },
                 summary = { Text(text = stringResource(R.string.pref_call_recording_desc)) },
+                modifier = Modifier.animateItem(),
+            )
+        }
+
+        item(key = "floating_button") {
+            SwitchPreference(
+                checked = floatingButtonEnabled,
+                onCheckedChange = onFloatingButtonChange,
+                shapes = BetterSegmentedShapes.middle(),
+                title = {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text(text = stringResource(R.string.pref_floating_button_name))
+                        val helpDescription =
+                            stringResource(R.string.pref_floating_button_help_content_description)
+                        IconButton(
+                            onClick = { showFloatingButtonHelp = true },
+                            modifier = Modifier
+                                .size(32.dp)
+                                .clearAndSetSemantics { contentDescription = helpDescription },
+                        ) {
+                            Text(
+                                text = "\u24D8", // ⓘ
+                                color = MaterialTheme.colorScheme.primary,
+                                style = MaterialTheme.typography.titleMedium,
+                            )
+                        }
+                    }
+                },
+                summary = { Text(text = stringResource(R.string.pref_floating_button_desc)) },
                 modifier = Modifier.animateItem(),
             )
         }
@@ -377,6 +493,37 @@ private fun SettingsContent(
             )
         }
 
+        item(key = "backup_header") {
+            PreferenceGap(modifier = Modifier.animateItem())
+        }
+
+        item(key = "backup") {
+            PreferenceCategory(
+                title = { Text(text = stringResource(R.string.pref_header_backup)) },
+                modifier = Modifier.animateItem(),
+            )
+        }
+
+        item(key = "backup_settings") {
+            Preference(
+                onClick = onBackupSettings,
+                shapes = BetterSegmentedShapes.top(),
+                title = { Text(text = stringResource(R.string.pref_backup_settings_name)) },
+                summary = { Text(text = stringResource(R.string.pref_backup_settings_desc)) },
+                modifier = Modifier.animateItem(),
+            )
+        }
+
+        item(key = "restore_settings") {
+            Preference(
+                onClick = onRestoreSettings,
+                shapes = BetterSegmentedShapes.bottom(),
+                title = { Text(text = stringResource(R.string.pref_restore_settings_name)) },
+                summary = { Text(text = stringResource(R.string.pref_restore_settings_desc)) },
+                modifier = Modifier.animateItem(),
+            )
+        }
+
         item(key = "about") {
             PreferenceCategory(
                 title = { Text(text = stringResource(R.string.pref_header_about)) },
@@ -388,9 +535,19 @@ private fun SettingsContent(
             Preference(
                 onClick = onSourceRepoOpen,
                 onLongClick = { onDebugModeChange(!isDebugMode) },
-                shapes = BetterSegmentedShapes.single(),
+                shapes = BetterSegmentedShapes.top(),
                 title = { Text(text = stringResource(R.string.pref_version_name)) },
                 summary = { Text(text = versionSummary(isDebugMode)) },
+                modifier = Modifier.animateItem(),
+            )
+        }
+
+        item(key = "mod_info") {
+            Preference(
+                onClick = { showModInfoDialog = true },
+                shapes = BetterSegmentedShapes.bottom(),
+                title = { Text(text = stringResource(R.string.pref_mod_info_name)) },
+                summary = { Text(text = stringResource(R.string.pref_mod_info_desc)) },
                 modifier = Modifier.animateItem(),
             )
         }
@@ -445,6 +602,80 @@ private fun SettingsContent(
             },
             onDismiss = {
                 showMinDurationDialog = false
+            },
+        )
+    }
+
+    if (showFloatingButtonHelp) {
+        AlertDialog(
+            title = { Text(text = stringResource(R.string.pref_floating_button_help_title)) },
+            text = {
+                Text(
+                    text = stringResource(R.string.pref_floating_button_help_body),
+                    modifier = Modifier
+                        .verticalScroll(state = rememberScrollState())
+                        .padding(top = 8.dp),
+                )
+            },
+            onDismissRequest = { showFloatingButtonHelp = false },
+            confirmButton = {
+                TextButton(onClick = { showFloatingButtonHelp = false }) {
+                    Text(text = stringResource(android.R.string.ok))
+                }
+            },
+        )
+    }
+
+    if (showModInfoDialog) {
+        AlertDialog(
+            title = { Text(text = stringResource(R.string.pref_mod_info_dialog_title)) },
+            text = {
+                Column(
+                    modifier = Modifier.verticalScroll(state = rememberScrollState()),
+                    verticalArrangement = Arrangement.spacedBy(12.dp),
+                ) {
+                    Text(text = stringResource(R.string.pref_mod_info_dialog_body))
+
+                    Text(
+                        text = stringResource(R.string.pref_mod_info_original_repo),
+                        color = MaterialTheme.colorScheme.primary,
+                        modifier = Modifier.clickable {
+                            try {
+                                context.startActivity(
+                                    Intent(
+                                        Intent.ACTION_VIEW,
+                                        "https://github.com/chenxiaolong/BCR".toUri(),
+                                    )
+                                )
+                            } catch (e: ActivityNotFoundException) {
+                                // 忽略：设备上没有可用浏览器
+                            }
+                        },
+                    )
+
+                    Text(
+                        text = stringResource(R.string.pref_mod_info_this_repo),
+                        color = MaterialTheme.colorScheme.primary,
+                        modifier = Modifier.clickable {
+                            try {
+                                context.startActivity(
+                                    Intent(
+                                        Intent.ACTION_VIEW,
+                                        "https://github.com/aksb/BCR".toUri(),
+                                    )
+                                )
+                            } catch (e: ActivityNotFoundException) {
+                                // 忽略：设备上没有可用浏览器
+                            }
+                        },
+                    )
+                }
+            },
+            onDismissRequest = { showModInfoDialog = false },
+            confirmButton = {
+                TextButton(onClick = { showModInfoDialog = false }) {
+                    Text(text = stringResource(android.R.string.ok))
+                }
             },
         )
     }
@@ -540,6 +771,7 @@ private fun PreviewSettingsScreen() {
                 recordDialingState = false,
                 notificationOpenDir = false,
                 showLauncherIcon = true,
+                floatingButtonEnabled = false,
                 isDebugMode = true,
                 forceDirectBoot = false,
                 onCallRecordingChange = {},
@@ -553,6 +785,9 @@ private fun PreviewSettingsScreen() {
                 onRecordDialingStateChange = {},
                 onNotificationOpenDirChange = {},
                 onShowLauncherIconChange = {},
+                onFloatingButtonChange = {},
+                onBackupSettings = {},
+                onRestoreSettings = {},
                 onDebugModeChange = {},
                 onSourceRepoOpen = {},
                 onForceDirectBootChange = {},

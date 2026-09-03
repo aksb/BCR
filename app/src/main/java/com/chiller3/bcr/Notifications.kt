@@ -36,7 +36,11 @@ class Notifications(
         const val CHANNEL_ID_SUCCESS = "success"
         const val CHANNEL_ID_SILENCE = "silence"
 
-        private val LEGACY_CHANNEL_IDS = arrayOf<String>()
+        // "floating_bubble": used only by the now-removed full-screen-intent trampoline that
+        // showed FloatingBubbleActivity on top of a secure lock screen. The floating bubble no
+        // longer needs a notification channel at all now that FloatingButtonService's plain
+        // overlay window handles the lock screen case directly (FLAG_SHOW_WHEN_LOCKED).
+        private val LEGACY_CHANNEL_IDS = arrayOf("floating_bubble")
 
         /** For access to system/internal resource values. */
         private val systemRes = Resources.getSystem()

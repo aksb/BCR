@@ -30,6 +30,13 @@
     <uses-permission android:name="android.permission.READ_PHONE_STATE" />
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
     <uses-permission android:name="android.permission.VIBRATE" />
+    <!--
+         Used for the optional floating recording button shown during calls. FloatingButtonService
+         also uses FLAG_SHOW_WHEN_LOCKED on its overlay window so the button (and the ability to
+         reach the rest of the screen underneath it, e.g. the answer/decline buttons) still works
+         on top of a secure lock screen — that flag doesn't require any permission beyond this one.
+    -->
+    <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW" />
 
     <application
         android:name=".RecorderApplication"
@@ -73,6 +80,10 @@
                 <action android:name="android.telecom.InCallService" />
             </intent-filter>
         </service>
+
+        <service
+            android:name=".FloatingButtonService"
+            android:exported="false" />
 
         <service
             android:name=".RecorderTileService"

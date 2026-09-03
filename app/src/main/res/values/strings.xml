@@ -45,8 +45,32 @@
     <string name="pref_show_launcher_icon_name">Show launcher icon</string>
     <string name="pref_show_launcher_icon_desc">When the launcher icon is hidden, dial <b>*#*#BCR#*#*</b> to open the app.</string>
 
+    <string name="pref_floating_button_name">Floating recording button</string>
+    <string name="pref_floating_button_desc">Show a draggable bubble during calls, with a label that shows what tapping it will do. Tap the ⓘ for details.</string>
+    <string name="pref_floating_button_help_content_description">Floating recording button help</string>
+    <string name="pref_floating_button_help_title">Floating recording button</string>
+    <string name="pref_floating_button_help_body">Shows a draggable bubble during calls. Tap it to manually start, pause, or resume recording (this mirrors the persistent notification\'s pause/resume buttons, so it\'s reachable even when you can\'t pull down the notification shade, e.g. on a secure lock screen). Before first use, turn on this switch and "Automatic call recording" once each, and grant the requested permissions — otherwise the bubble won\'t appear or won\'t work.\n\nBubble states:\n🟢 Green — not recording, tap to start\n🔴 Red — recording, tap to pause\n\nThis floating button doesn\'t exist in the original app; it\'s an addition made here. How it behaves can get confusing once combined with "Automatic call recording" and the record rules\' initial state ("start recording immediately" vs. "paused, until manually resumed") — please test it with your actual settings and confirm it does what you expect before relying on it, so you don\'t end up with a missed recording.</string>
+    <string name="floating_bubble_label_not_recording">Tap to start recording</string>
+    <string name="floating_bubble_label_recording">Tap to pause recording</string>
+
+    <!-- Backup preferences -->
+    <string name="pref_header_backup">Backup</string>
+
+    <string name="pref_backup_settings_name">Backup settings</string>
+    <string name="pref_backup_settings_desc">Save all app settings to a file.</string>
+
+    <string name="pref_restore_settings_name">Restore settings</string>
+    <string name="pref_restore_settings_desc">Restore all app settings from a previously saved file.</string>
+
     <!-- About "preference" -->
     <string name="pref_version_name">Version</string>
+
+    <string name="pref_mod_info_name">关于本修改版</string>
+    <string name="pref_mod_info_desc">修改说明与项目地址</string>
+    <string name="pref_mod_info_dialog_title">关于本修改版</string>
+    <string name="pref_mod_info_dialog_body">本软件基于开源项目 BCR 二次开发，新增了来电界面录音按钮，方便锁屏状态下无法下拉通知栏时快速开始/暂停录音。\n\n本项目与原作者无关，问题反馈请提交到本项目地址，勿打扰原作者。</string>
+    <string name="pref_mod_info_original_repo">原始项目：github.com/chenxiaolong/BCR</string>
+    <string name="pref_mod_info_this_repo">本项目地址：github.com/aksb/BCR</string>
 
     <!-- Debug preferences -->
     <string name="pref_force_direct_boot_name">Force direct boot mode</string>
@@ -238,6 +262,12 @@
     <!-- Snackbar alerts -->
     <string name="alert_logcat_success">Successfully saved logs to %1$s</string>
     <string name="alert_logcat_failure">Failed to save logs to %1$s: %2$s</string>
+
+    <string name="alert_backup_success">Successfully backed up settings to %1$s</string>
+    <string name="alert_backup_failure">Failed to back up settings to %1$s: %2$s</string>
+    <string name="alert_restore_success">Successfully restored settings from %1$s</string>
+    <string name="alert_restore_success_output_dir_needs_reselect">Restored settings from %1$s, but the recording folder needs to be selected again (its access was lost, most likely because the app was reinstalled or its data was cleared)</string>
+    <string name="alert_restore_failure">Failed to restore settings from %1$s: %2$s</string>
     <string name="alert_contact_group_query_failure">Failed to query contact groups: %1$s</string>
 
     <!-- Notifications -->

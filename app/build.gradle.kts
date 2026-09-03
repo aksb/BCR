@@ -123,7 +123,7 @@ android {
     buildToolsVersion = "37.0.0"
 
     defaultConfig {
-        applicationId = "com.chiller3.bcr"
+        applicationId = "com.aksb.bcr2026"
         minSdk = 28
         targetSdk = 37
         versionCode = gitVersionCode

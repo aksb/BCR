@@ -28,6 +28,8 @@ import com.chiller3.bcr.rule.RecordRule
 import com.chiller3.bcr.settings.SettingsActivity
 import com.chiller3.bcr.template.Template
 import kotlinx.serialization.json.Json
+import org.json.JSONArray
+import org.json.JSONObject
 import java.io.File
 
 class Preferences(initialContext: Context) {
@@ -52,6 +54,9 @@ class Preferences(initialContext: Context) {
         private const val PREF_RECORD_DIALING_STATE = "record_dialing_state"
         private const val PREF_NOTIFICATION_OPEN_DIR = "notification_open_dir"
         private const val PREF_NEXT_NOTIFICATION_ID = "next_notification_id"
+        private const val PREF_FLOATING_BUTTON = "floating_button_enabled"
+        private const val PREF_FLOATING_BUTTON_POS_X = "floating_button_pos_x_fraction"
+        private const val PREF_FLOATING_BUTTON_POS_Y = "floating_button_pos_y_fraction"
 
         // Legacy preferences.
         private const val PREF_FORMAT_STEREO = "stereo"
@@ -138,7 +143,7 @@ class Preferences(initialContext: Context) {
 
     /** Whether to show debug preferences and enable creation of debug logs for all calls. */
     var isDebugMode: Boolean
-        get() = BuildConfig.DEBUG || prefs.getBoolean(PREF_DEBUG_MODE, false)
+        get() = prefs.getBoolean(PREF_DEBUG_MODE, false)
         set(enabled) = prefs.edit { putBoolean(PREF_DEBUG_MODE, enabled) }
 
     /** Whether to output to direct boot directories even if the device has been unlocked once. */
@@ -413,6 +418,41 @@ class Preferences(initialContext: Context) {
         set(enabled) = prefs.edit { putBoolean(PREF_NOTIFICATION_OPEN_DIR, enabled) }
 
     /**
+     * Whether to show a draggable floating button during calls that allows manually starting and
+     * stopping a recording. Requires the "display over other apps" permission.
+     */
+    var floatingButtonEnabled: Boolean
+        get() = prefs.getBoolean(PREF_FLOATING_BUTTON, false)
+        set(enabled) = prefs.edit { putBoolean(PREF_FLOATING_BUTTON, enabled) }
+
+    /**
+     * The floating button's last user-dragged position, as a fraction (0f..1f) of the screen
+     * width/height for the top-left corner of the bubble. Null if the user has never dragged it
+     * (or the value was cleared), in which case a hardcoded default position should be used
+     * instead. Stored as a fraction rather than raw pixels so it still makes sense if the screen
+     * resolution or orientation differs the next time it's read (e.g. after a display size change
+     * or on a different device after a settings restore).
+     */
+    var floatingButtonPosition: Pair<Float, Float>?
+        get() {
+            if (!prefs.contains(PREF_FLOATING_BUTTON_POS_X) ||
+                !prefs.contains(PREF_FLOATING_BUTTON_POS_Y)) {
+                return null
+            }
+            return prefs.getFloat(PREF_FLOATING_BUTTON_POS_X, 0f) to
+                    prefs.getFloat(PREF_FLOATING_BUTTON_POS_Y, 0f)
+        }
+        set(position) = prefs.edit {
+            if (position == null) {
+                remove(PREF_FLOATING_BUTTON_POS_X)
+                remove(PREF_FLOATING_BUTTON_POS_Y)
+            } else {
+                putFloat(PREF_FLOATING_BUTTON_POS_X, position.first)
+                putFloat(PREF_FLOATING_BUTTON_POS_Y, position.second)
+            }
+        }
+
+    /**
      * The [ComponentName] for the [SettingsActivity] alias.
      *
      * The alias is disabled when the launcher icon is disabled. The regular <activity> manifest
@@ -503,6 +543,91 @@ class Preferences(initialContext: Context) {
             recordRules = legacyRules.map { it.toRecordRule() }
         } catch (_: IllegalArgumentException) {
             // Already migrated.
+        }
+    }
+
+    /**
+     * Serialize every preference currently stored (record rules, output format, output
+     * directory, filename template, toggles, etc.) into a single JSON document suitable for
+     * backup.
+     */
+    fun exportToJson(): String {
+        val obj = JSONObject()
+
+        for ((key, value) in prefs.all) {
+            when (value) {
+                is Boolean -> obj.put(key, value)
+                is Int -> obj.put(key, value)
+                is Long -> obj.put(key, value)
+                is Float -> obj.put(key, value.toDouble())
+                is String -> obj.put(key, value)
+                is Set<*> -> obj.put(key, JSONArray(value.toList()))
+                else -> Log.w(TAG, "Skipping preference with unknown type: $key")
+            }
+        }
+
+        return obj.toString(2)
+    }
+
+    /**
+     * Restore every preference from a JSON document previously produced by [exportToJson].
+     *
+     * All existing preferences are discarded first. [PREF_OUTPUT_DIR], if present, is restored
+     * via the [outputDir] setter afterwards so that persisted SAF URI permissions are
+     * re-requested. This commonly fails: Android's Storage Access Framework only grants a
+     * directory's persisted permissions to an app that has actually picked it via the system
+     * folder picker, and revokes that grant on uninstall or "clear data" — a saved URI string
+     * alone can't be used to silently reacquire access after that happens. When it fails, the
+     * rest of the restored preferences are kept and the output directory falls back to the
+     * default.
+     *
+     * @return `true` if [PREF_OUTPUT_DIR] was present in [json] but could not be restored (the
+     *   caller should tell the user to reselect their recording folder), `false` otherwise.
+     * @throws org.json.JSONException if [json] is not a valid JSON object
+     */
+    fun importFromJson(json: String): Boolean {
+        val obj = JSONObject(json)
+        val outputDirValue = obj.optString(PREF_OUTPUT_DIR, "").ifEmpty { null }
+
+        prefs.edit {
+            clear()
+
+            val keys = obj.keys()
+            while (keys.hasNext()) {
+                val key = keys.next()
+                if (key == PREF_OUTPUT_DIR) {
+                    // Restored separately below via the outputDir setter.
+                    continue
+                }
+
+                when (val value = obj.get(key)) {
+                    is Boolean -> putBoolean(key, value)
+                    is Int -> putInt(key, value)
+                    is Long -> putLong(key, value)
+                    is Double -> putFloat(key, value.toFloat())
+                    is String -> putString(key, value)
+                    is JSONArray -> {
+                        val set = mutableSetOf<String>()
+                        for (i in 0 until value.length()) {
+                            set.add(value.getString(i))
+                        }
+                        putStringSet(key, set)
+                    }
+                    else -> Log.w(TAG, "Skipping preference with unknown type: $key")
+                }
+            }
+        }
+
+        if (outputDirValue == null) {
+            return false
+        }
+
+        return try {
+            outputDir = outputDirValue.toUri()
+            false
+        } catch (e: Exception) {
+            Log.w(TAG, "Failed to restore output directory: $outputDirValue", e)
+            true
         }
     }
 }
