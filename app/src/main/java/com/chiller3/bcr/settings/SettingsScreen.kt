@@ -344,6 +344,7 @@ private fun SettingsContent(
     var showMinDurationDialog by rememberSaveable { mutableStateOf(false) }
     var showFloatingButtonHelp by rememberSaveable { mutableStateOf(false) }
     var showModInfoDialog by rememberSaveable { mutableStateOf(false) }
+    val context = LocalContext.current
 
     PreferenceColumn(contentPadding = contentPadding) {
         item(key = "general") {
