@@ -110,7 +110,7 @@ val gitVersionTriple = describeVersion(git)
 val gitVersionCode = getVersionCode(gitVersionTriple)
 val gitVersionName = getVersionName(git, gitVersionTriple)
 
-val projectUrl = "https://github.com/aksb/BCR"
+val projectUrl = "https://github.com/chenxiaolong/BCR"
 val releaseMetadataBranch = "master"
 
 val extraDir = layout.buildDirectory.map { it.dir("extra") }
