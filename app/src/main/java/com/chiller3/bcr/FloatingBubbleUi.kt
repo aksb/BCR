@@ -6,6 +6,7 @@
 package com.chiller3.bcr
 
 import android.animation.ObjectAnimator
+import android.animation.PropertyValuesHolder
 import android.content.Context
 import android.graphics.Paint
 import android.graphics.Typeface
@@ -13,6 +14,7 @@ import android.util.Log
 import android.view.Gravity
 import android.view.MotionEvent
 import android.view.View
+import android.widget.FrameLayout
 import android.widget.ImageView
 import android.widget.LinearLayout
 import android.widget.TextView
@@ -69,11 +71,14 @@ object FloatingBubbleUi {
     /** Vertical gap between the icon and the label below it. */
     private const val LABEL_GAP_DP = 4f
 
-    /** Duration (ms) of one fade-out-and-back-in cycle of the recording pulse animation. */
-    private const val RECORDING_PULSE_DURATION_MS = 700L
+    /** Duration (ms) of one full expand-and-fade cycle of the recording ripple animation. */
+    private const val RECORDING_RIPPLE_DURATION_MS = 1400L
 
-    /** How dim the icon gets at the bottom of each pulse, while actively recording. */
-    private const val RECORDING_PULSE_MIN_ALPHA = 0.4f
+    /** How large the ripple grows (relative to the icon's own size) before resetting. */
+    private const val RECORDING_RIPPLE_MAX_SCALE = 1.6f
+
+    /** The ripple's opacity at the start of each cycle; it fades to 0 as it expands. */
+    private const val RECORDING_RIPPLE_START_ALPHA = 0.55f
 
     /** The icon's on-screen size (width and height, it's square), in pixels. */
     private fun iconSizePx(context: Context): Int {
@@ -84,6 +89,19 @@ object FloatingBubbleUi {
     private fun iconPaddingPx(context: Context): Int {
         val density = context.resources.displayMetrics.density
         return (BASE_ICON_PADDING_DP * SIZE_SCALE * density).toInt()
+    }
+
+    /**
+     * The size (width and height) of the square box reserved for the icon, in pixels. This is
+     * larger than [iconSizePx] itself: the recording ripple animates out to
+     * [RECORDING_RIPPLE_MAX_SCALE] times the icon's size, so this box leaves enough room around
+     * the icon for the ripple to fully expand into without being clipped - by this view, or by
+     * the bubble's overlay window, which is sized exactly to [bubbleWidthPx] x [bubbleHeightPx].
+     */
+    private fun iconBoxSizePx(context: Context): Int {
+        val iconSize = iconSizePx(context)
+        val ripplePadding = ((RECORDING_RIPPLE_MAX_SCALE - 1f) / 2f * iconSize).roundToInt()
+        return iconSize + 2 * ripplePadding
     }
 
     private fun labelTextSizePx(context: Context): Float =
@@ -114,7 +132,7 @@ object FloatingBubbleUi {
         val widestLabelTextPx = labelStrings(context).maxOf { paint.measureText(it) }
         val labelChipWidthPx = widestLabelTextPx + 2 * LABEL_HORIZONTAL_PADDING_DP * density
 
-        return max(iconSizePx(context), labelChipWidthPx.roundToInt())
+        return max(iconBoxSizePx(context), labelChipWidthPx.roundToInt())
     }
 
     /** The bubble's fixed overall height in pixels: the icon, plus the gap, plus the label chip. */
@@ -125,7 +143,7 @@ object FloatingBubbleUi {
         val labelChipHeightPx =
             (fontMetrics.bottom - fontMetrics.top) + 2 * LABEL_VERTICAL_PADDING_DP * density
 
-        return iconSizePx(context) + (LABEL_GAP_DP * density).roundToInt() +
+        return iconBoxSizePx(context) + (LABEL_GAP_DP * density).roundToInt() +
                 labelChipHeightPx.roundToInt()
     }
 
@@ -139,17 +157,40 @@ object FloatingBubbleUi {
         LinearLayout(context).apply {
             orientation = LinearLayout.VERTICAL
             gravity = Gravity.CENTER_HORIZONTAL
+            // The ripple (added below) is drawn larger than the icon box it sits behind, so
+            // neither this container nor the FrameLayout wrapping the icon may clip their
+            // children to bounds, or the expanding ripple would get cut off at the icon's edges.
+            clipChildren = false
 
             val iconSize = iconSizePx(context)
+            val iconBoxSize = iconBoxSizePx(context)
             val iconPadding = iconPaddingPx(context)
 
             addView(
-                ImageView(context).apply {
-                    setImageResource(R.drawable.ic_floating_mic)
-                    setPadding(iconPadding, iconPadding, iconPadding, iconPadding)
-                    scaleType = ImageView.ScaleType.FIT_CENTER
+                FrameLayout(context).apply {
+                    clipChildren = false
+
+                    // Sits behind the icon and is invisible (alpha 0) until a recording is
+                    // actually in progress; see updateAppearance().
+                    addView(
+                        View(context).apply {
+                            background =
+                                ContextCompat.getDrawable(context, R.drawable.bg_floating_bubble_ripple)
+                            alpha = 0f
+                        },
+                        FrameLayout.LayoutParams(iconSize, iconSize, Gravity.CENTER),
+                    )
+
+                    addView(
+                        ImageView(context).apply {
+                            setImageResource(R.drawable.ic_floating_mic)
+                            setPadding(iconPadding, iconPadding, iconPadding, iconPadding)
+                            scaleType = ImageView.ScaleType.FIT_CENTER
+                        },
+                        FrameLayout.LayoutParams(iconSize, iconSize, Gravity.CENTER),
+                    )
                 },
-                LinearLayout.LayoutParams(iconSize, iconSize),
+                LinearLayout.LayoutParams(iconBoxSize, iconBoxSize),
             )
 
             val density = context.resources.displayMetrics.density
@@ -179,7 +220,9 @@ object FloatingBubbleUi {
     /** Update the bubble's icon background and label text to reflect its current [BubbleState]. */
     fun updateAppearance(view: View, state: BubbleState) {
         val group = view as LinearLayout
-        val iconView = group.getChildAt(0) as ImageView
+        val iconWrapper = group.getChildAt(0) as FrameLayout
+        val rippleView = iconWrapper.getChildAt(0) as View
+        val iconView = iconWrapper.getChildAt(1) as ImageView
         val labelView = group.getChildAt(1) as TextView
 
         iconView.background = ContextCompat.getDrawable(
@@ -213,37 +256,45 @@ object FloatingBubbleUi {
             },
         )
 
-        // Gently pulse the icon while actively recording, as a passive "this is live" cue.
-        // Any previous pulse is cancelled first so switching states (or calling this repeatedly
-        // for the same state) never stacks up multiple running animators on the same view.
-        (iconView.tag as? ObjectAnimator)?.cancel()
+        // While actively recording, a translucent ring behind the icon repeatedly grows outward
+        // and fades away - a radar/sonar-ping style cue that recording is live. Any previous
+        // animation is cancelled first so switching states (or calling this repeatedly for the
+        // same state) never stacks up multiple running animators on the same view.
+        (rippleView.tag as? ObjectAnimator)?.cancel()
         if (state == BubbleState.RECORDING) {
-            iconView.alpha = 1f
-            iconView.tag = ObjectAnimator.ofFloat(
-                iconView, View.ALPHA, 1f, RECORDING_PULSE_MIN_ALPHA,
+            rippleView.tag = ObjectAnimator.ofPropertyValuesHolder(
+                rippleView,
+                PropertyValuesHolder.ofFloat(View.SCALE_X, 1f, RECORDING_RIPPLE_MAX_SCALE),
+                PropertyValuesHolder.ofFloat(View.SCALE_Y, 1f, RECORDING_RIPPLE_MAX_SCALE),
+                PropertyValuesHolder.ofFloat(View.ALPHA, RECORDING_RIPPLE_START_ALPHA, 0f),
             ).apply {
-                duration = RECORDING_PULSE_DURATION_MS
-                repeatMode = ObjectAnimator.REVERSE
+                duration = RECORDING_RIPPLE_DURATION_MS
+                repeatMode = ObjectAnimator.RESTART
                 repeatCount = ObjectAnimator.INFINITE
                 start()
             }
         } else {
-            iconView.tag = null
-            iconView.alpha = 1f
+            rippleView.tag = null
+            rippleView.scaleX = 1f
+            rippleView.scaleY = 1f
+            rippleView.alpha = 0f
         }
     }
 
     /**
-     * Stop the recording pulse animation, if one is running, and restore the icon to fully
-     * opaque. Must be called before the bubble view is discarded (e.g. in the hosting service's
-     * `onDestroy`), since an in-progress [ObjectAnimator] with infinite repeat count otherwise
-     * keeps running - and keeps the view alive - even after the view is detached from its window.
+     * Stop the recording ripple animation, if one is running, and hide the ripple. Must be
+     * called before the bubble view is discarded (e.g. in the hosting service's `onDestroy`),
+     * since an in-progress [ObjectAnimator] with infinite repeat count otherwise keeps running -
+     * and keeps the view alive - even after the view is detached from its window.
      */
     fun cancelAnimations(view: View) {
-        val iconView = (view as LinearLayout).getChildAt(0) as ImageView
-        (iconView.tag as? ObjectAnimator)?.cancel()
-        iconView.tag = null
-        iconView.alpha = 1f
+        val iconWrapper = (view as LinearLayout).getChildAt(0) as FrameLayout
+        val rippleView = iconWrapper.getChildAt(0)
+        (rippleView.tag as? ObjectAnimator)?.cancel()
+        rippleView.tag = null
+        rippleView.scaleX = 1f
+        rippleView.scaleY = 1f
+        rippleView.alpha = 0f
     }
 
     /**
