@@ -8,8 +8,6 @@ package com.chiller3.bcr
 import android.animation.ObjectAnimator
 import android.animation.PropertyValuesHolder
 import android.content.Context
-import android.graphics.Paint
-import android.graphics.Typeface
 import android.util.Log
 import android.view.Gravity
 import android.view.MotionEvent
@@ -17,10 +15,8 @@ import android.view.View
 import android.widget.FrameLayout
 import android.widget.ImageView
 import android.widget.LinearLayout
-import android.widget.TextView
 import androidx.core.content.ContextCompat
 import kotlin.math.abs
-import kotlin.math.max
 import kotlin.math.roundToInt
 
 /**
@@ -60,18 +56,6 @@ object FloatingBubbleUi {
     private const val BASE_ICON_SIZE_DP = 56f
     private const val BASE_ICON_PADDING_DP = 14f
 
-    /** Text size of the label shown under the bubble's icon. */
-    private const val LABEL_TEXT_SIZE_SP = 10.2f
-
-    /** Horizontal padding inside the label's background chip, on each side. */
-    private const val LABEL_HORIZONTAL_PADDING_DP = 6.8f
-
-    /** Vertical padding inside the label's background chip, on each side. */
-    private const val LABEL_VERTICAL_PADDING_DP = 2.55f
-
-    /** Vertical gap between the icon and the label below it. */
-    private const val LABEL_GAP_DP = 3.4f
-
     /** Duration (ms) of one full expand-and-fade cycle of the recording ripple animation. */
     private const val RECORDING_RIPPLE_DURATION_MS = 1400L
 
@@ -105,53 +89,23 @@ object FloatingBubbleUi {
         return iconSize + 2 * ripplePadding
     }
 
-    private fun labelTextSizePx(context: Context): Float =
-        LABEL_TEXT_SIZE_SP * context.resources.displayMetrics.scaledDensity
-
-    /** The two possible label strings, one per (merged) bubble appearance. */
-    private fun labelStrings(context: Context): List<String> = listOf(
-        context.getString(R.string.floating_bubble_label_not_recording),
-        context.getString(R.string.floating_bubble_label_recording),
-    )
-
-    private fun labelPaint(context: Context): Paint =
-        Paint(Paint.ANTI_ALIAS_FLAG).apply {
-            textSize = labelTextSizePx(context)
-            typeface = Typeface.DEFAULT_BOLD
-        }
-
     /**
-     * The bubble's fixed overall width in pixels: whichever is wider between the icon itself and
-     * the widest of the two possible label chips (text + its horizontal padding). Using a single
-     * fixed width for both labels (rather than sizing the window to each label individually) means
-     * the bubble never needs to resize, reposition, or re-clamp itself to the screen edges when its
-     * state - and thus its label text - changes.
+     * The bubble's fixed overall width in pixels: just the icon box, since the bubble no longer
+     * shows a text label below the icon (the recording ripple animation already communicates
+     * state).
      */
-    fun bubbleWidthPx(context: Context): Int {
-        val density = context.resources.displayMetrics.density
-        val paint = labelPaint(context)
-        val widestLabelTextPx = labelStrings(context).maxOf { paint.measureText(it) }
-        val labelChipWidthPx = widestLabelTextPx + 2 * LABEL_HORIZONTAL_PADDING_DP * density
-
-        return max(iconBoxSizePx(context), labelChipWidthPx.roundToInt())
-    }
-
-    /** The bubble's fixed overall height in pixels: the icon, plus the gap, plus the label chip. */
-    fun bubbleHeightPx(context: Context): Int {
-        val density = context.resources.displayMetrics.density
-        val paint = labelPaint(context)
-        val fontMetrics = paint.fontMetrics
-        val labelChipHeightPx =
-            (fontMetrics.bottom - fontMetrics.top) + 2 * LABEL_VERTICAL_PADDING_DP * density
-
-        return iconBoxSizePx(context) + (LABEL_GAP_DP * density).roundToInt() +
-                labelChipHeightPx.roundToInt()
-    }
+    fun bubbleWidthPx(context: Context): Int = iconBoxSizePx(context)
 
     /**
-     * Create the bubble's view: a small icon on top (round, colored background, matching the
-     * previous look) with a text label chip below it describing what tapping the bubble will do.
-     * Caller is responsible for placing it in a window, sized to [bubbleWidthPx] x
+     * The bubble's fixed overall height in pixels: just the icon box, since the bubble no longer
+     * shows a text label below the icon (the recording ripple animation already communicates
+     * state).
+     */
+    fun bubbleHeightPx(context: Context): Int = iconBoxSizePx(context)
+
+    /**
+     * Create the bubble's view: a small icon (round, colored background, matching the previous
+     * look). Caller is responsible for placing it in a window, sized to [bubbleWidthPx] x
      * [bubbleHeightPx].
      */
     fun createBubbleView(context: Context): LinearLayout =
@@ -193,38 +147,14 @@ object FloatingBubbleUi {
                 },
                 LinearLayout.LayoutParams(iconBoxSize, iconBoxSize),
             )
-
-            val density = context.resources.displayMetrics.density
-            val labelHPadding = (LABEL_HORIZONTAL_PADDING_DP * density).roundToInt()
-            val labelVPadding = (LABEL_VERTICAL_PADDING_DP * density).roundToInt()
-
-            addView(
-                TextView(context).apply {
-                    setTextColor(0xFFFFFFFF.toInt())
-                    textSize = LABEL_TEXT_SIZE_SP
-                    setTypeface(typeface, Typeface.BOLD)
-                    background =
-                        ContextCompat.getDrawable(context, R.drawable.bg_floating_bubble_label)
-                    setPadding(labelHPadding, labelVPadding, labelHPadding, labelVPadding)
-                    maxLines = 1
-                    gravity = Gravity.CENTER
-                },
-                LinearLayout.LayoutParams(
-                    LinearLayout.LayoutParams.MATCH_PARENT,
-                    LinearLayout.LayoutParams.WRAP_CONTENT,
-                ).apply {
-                    topMargin = (LABEL_GAP_DP * density).roundToInt()
-                },
-            )
         }
 
-    /** Update the bubble's icon background and label text to reflect its current [BubbleState]. */
+    /** Update the bubble's icon background and image to reflect its current [BubbleState]. */
     fun updateAppearance(view: View, state: BubbleState) {
         val group = view as LinearLayout
         val iconWrapper = group.getChildAt(0) as FrameLayout
         val rippleView = iconWrapper.getChildAt(0) as View
         val iconView = iconWrapper.getChildAt(1) as ImageView
-        val labelView = group.getChildAt(1) as TextView
 
         iconView.background = ContextCompat.getDrawable(
             view.context,
@@ -240,20 +170,11 @@ object FloatingBubbleUi {
         )
 
         // The icon itself also changes with state: a mic while idle/paused (tap to start
-        // recording), and a stop-style rounded square while actively recording (tap to pause) -
-        // matching the same convention used by the two label strings below.
+        // recording), and a stop-style rounded square while actively recording (tap to pause).
         iconView.setImageResource(
             when (state) {
                 BubbleState.NOT_RECORDING, BubbleState.PAUSED -> R.drawable.ic_floating_mic
                 BubbleState.RECORDING -> R.drawable.ic_floating_stop
-            },
-        )
-
-        labelView.text = view.context.getString(
-            when (state) {
-                BubbleState.NOT_RECORDING, BubbleState.PAUSED ->
-                    R.string.floating_bubble_label_not_recording
-                BubbleState.RECORDING -> R.string.floating_bubble_label_recording
             },
         )
 
