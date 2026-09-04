@@ -195,6 +195,16 @@ object FloatingBubbleUi {
             },
         )
 
+        // The icon itself also changes with state: a mic while idle/paused (tap to start
+        // recording), and a stop-style rounded square while actively recording (tap to pause) -
+        // matching the same convention used by the two label strings below.
+        iconView.setImageResource(
+            when (state) {
+                BubbleState.NOT_RECORDING, BubbleState.PAUSED -> R.drawable.ic_floating_mic
+                BubbleState.RECORDING -> R.drawable.ic_floating_stop
+            },
+        )
+
         labelView.text = view.context.getString(
             when (state) {
                 BubbleState.NOT_RECORDING, BubbleState.PAUSED ->
