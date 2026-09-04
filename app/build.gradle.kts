@@ -269,10 +269,10 @@ androidComponents.onVariants { variant ->
         doLast {
             val props = LinkedHashMap<String, String>()
             props["id"] = variant.applicationId.get()
-            props["name"] = rootProject.name
+            props["name"] = "BCR修改版"
             props["version"] = "v${variantVersionName.get()}"
             props["versionCode"] = variantVersionCode.get().toString()
-            props["author"] = "chenxiaolong"
+            props["author"] = "chenxiaolong  修改者 aksb"
             props["description"] = "Basic Call Recorder"
 
             if (variant.name == "release") {
