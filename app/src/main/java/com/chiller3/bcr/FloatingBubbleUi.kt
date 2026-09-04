@@ -39,9 +39,10 @@ object FloatingBubbleUi {
     /**
      * Bubble size multiplier relative to the original 56dp bubble. Bumped up because the default
      * size was hard to hit reliably during a call, then scaled back down to ~80% of that enlarged
-     * size (1.5f * 0.8 = 1.2f) since it ended up a bit too large in practice.
+     * size (1.5f * 0.8 = 1.2f) since it ended up a bit too large in practice, then scaled down
+     * again to 85% of that (1.2f * 0.85 = 1.02f) after adding the recording ripple animation.
      */
-    private const val SIZE_SCALE = 1.2f
+    private const val SIZE_SCALE = 1.02f
 
     /**
      * The two visual/interaction states the bubble can be in for the current call. This must stay
@@ -60,16 +61,16 @@ object FloatingBubbleUi {
     private const val BASE_ICON_PADDING_DP = 14f
 
     /** Text size of the label shown under the bubble's icon. */
-    private const val LABEL_TEXT_SIZE_SP = 12f
+    private const val LABEL_TEXT_SIZE_SP = 10.2f
 
     /** Horizontal padding inside the label's background chip, on each side. */
-    private const val LABEL_HORIZONTAL_PADDING_DP = 8f
+    private const val LABEL_HORIZONTAL_PADDING_DP = 6.8f
 
     /** Vertical padding inside the label's background chip, on each side. */
-    private const val LABEL_VERTICAL_PADDING_DP = 3f
+    private const val LABEL_VERTICAL_PADDING_DP = 2.55f
 
     /** Vertical gap between the icon and the label below it. */
-    private const val LABEL_GAP_DP = 4f
+    private const val LABEL_GAP_DP = 3.4f
 
     /** Duration (ms) of one full expand-and-fade cycle of the recording ripple animation. */
     private const val RECORDING_RIPPLE_DURATION_MS = 1400L
@@ -78,7 +79,7 @@ object FloatingBubbleUi {
     private const val RECORDING_RIPPLE_MAX_SCALE = 1.6f
 
     /** The ripple's opacity at the start of each cycle; it fades to 0 as it expands. */
-    private const val RECORDING_RIPPLE_START_ALPHA = 0.55f
+    private const val RECORDING_RIPPLE_START_ALPHA = 0.7f
 
     /** The icon's on-screen size (width and height, it's square), in pixels. */
     private fun iconSizePx(context: Context): Int {
