@@ -5,6 +5,7 @@
 
 package com.chiller3.bcr
 
+import android.animation.ObjectAnimator
 import android.content.Context
 import android.graphics.Paint
 import android.graphics.Typeface
@@ -67,6 +68,12 @@ object FloatingBubbleUi {
 
     /** Vertical gap between the icon and the label below it. */
     private const val LABEL_GAP_DP = 4f
+
+    /** Duration (ms) of one fade-out-and-back-in cycle of the recording pulse animation. */
+    private const val RECORDING_PULSE_DURATION_MS = 700L
+
+    /** How dim the icon gets at the bottom of each pulse, while actively recording. */
+    private const val RECORDING_PULSE_MIN_ALPHA = 0.4f
 
     /** The icon's on-screen size (width and height, it's square), in pixels. */
     private fun iconSizePx(context: Context): Int {
@@ -195,6 +202,38 @@ object FloatingBubbleUi {
                 BubbleState.RECORDING -> R.string.floating_bubble_label_recording
             },
         )
+
+        // Gently pulse the icon while actively recording, as a passive "this is live" cue.
+        // Any previous pulse is cancelled first so switching states (or calling this repeatedly
+        // for the same state) never stacks up multiple running animators on the same view.
+        (iconView.tag as? ObjectAnimator)?.cancel()
+        if (state == BubbleState.RECORDING) {
+            iconView.alpha = 1f
+            iconView.tag = ObjectAnimator.ofFloat(
+                iconView, View.ALPHA, 1f, RECORDING_PULSE_MIN_ALPHA,
+            ).apply {
+                duration = RECORDING_PULSE_DURATION_MS
+                repeatMode = ObjectAnimator.REVERSE
+                repeatCount = ObjectAnimator.INFINITE
+                start()
+            }
+        } else {
+            iconView.tag = null
+            iconView.alpha = 1f
+        }
+    }
+
+    /**
+     * Stop the recording pulse animation, if one is running, and restore the icon to fully
+     * opaque. Must be called before the bubble view is discarded (e.g. in the hosting service's
+     * `onDestroy`), since an in-progress [ObjectAnimator] with infinite repeat count otherwise
+     * keeps running - and keeps the view alive - even after the view is detached from its window.
+     */
+    fun cancelAnimations(view: View) {
+        val iconView = (view as LinearLayout).getChildAt(0) as ImageView
+        (iconView.tag as? ObjectAnimator)?.cancel()
+        iconView.tag = null
+        iconView.alpha = 1f
     }
 
     /**

@@ -133,6 +133,8 @@ android {
 
         buildConfigField("String", "PROJECT_URL_AT_COMMIT",
             "\"${projectUrl}/tree/${gitVersionTriple.third.name}\"")
+        buildConfigField("String", "UPSTREAM_DOCS_URL",
+            "\"https://github.com/chenxiaolong/BCR\"")
 
         buildConfigField("String", "PROVIDER_AUTHORITY",
             "APPLICATION_ID + \".provider\"")

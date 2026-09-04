@@ -208,6 +208,7 @@ class FloatingButtonService : Service() {
         super.onDestroy()
 
         if (::bubbleView.isInitialized) {
+            FloatingBubbleUi.cancelAnimations(bubbleView)
             try {
                 windowManager.removeView(bubbleView)
             } catch (e: Exception) {

@@ -164,7 +164,7 @@ private fun buildMessage(syntaxColors: TemplateSyntaxColors): AnnotatedString {
         } else if (annotation.key == "type" && annotation.value == "template_docs") {
             newAnnotations.add(
                 AnnotatedString.Range(
-                    LinkAnnotation.Url(BuildConfig.PROJECT_URL_AT_COMMIT + "#filename-template"),
+                    LinkAnnotation.Url(BuildConfig.UPSTREAM_DOCS_URL + "#filename-template"),
                     start,
                     end,
                 )
