@@ -42,6 +42,19 @@
 `release.yml`（打 tag 时创建正式 Release，需要你自己配置签名密钥）都原样保留，没有
 改动。
 
+## 4. 声明 CAPTURE_VOICE_COMMUNICATION_OUTPUT 权限（微信/VoIP 通话录音前置准备）
+
+- `AndroidManifest.xml` 新增一条 `<uses-permission android:name="android.permission.
+  CAPTURE_VOICE_COMMUNICATION_OUTPUT" />`。
+- 这是 `AudioPlaybackCaptureConfiguration` 抓取 `USAGE_VOICE_COMMUNICATION`（微信等
+  VoIP 通话使用的音频 usage）所必须的签名级权限，普通三方应用即使拿到 MediaProjection
+  也无法抓取这类音频流，必须由系统显式授予。
+- 这条权限本身**不会自动生效**：还需要配合设备本地 `/system/etc/permissions/`（或对应
+  Magisk 模块）下同包名的 `privapp-permissions-*.xml` 文件里加入同名条目，系统才会在
+  这个特权 App 请求该权限时自动批准（而不是弹权限申请框，实际上普通权限框也弹不出这种
+  签名级权限）。
+- 目前仅完成权限声明，尚未接入实际的 VoIP 通话检测/录音逻辑，是后续开发的前置步骤。
+
 ## 如何推送到你自己的仓库
 
 这个压缩包里已经包含了一个初始化好的 git 仓库（`.git` 目录），本次改动已经提交为

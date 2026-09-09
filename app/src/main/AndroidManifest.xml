@@ -19,6 +19,14 @@
     <uses-permission
         android:name="android.permission.CONTROL_INCALL_EXPERIENCE"
         tools:ignore="ProtectedPermissions" />
+    <!--
+         This system app permission allows AudioPlaybackCaptureConfiguration to capture
+         audio streams tagged with USAGE_VOICE_COMMUNICATION (e.g. WeChat/VoIP call audio),
+         which is normally excluded from playback capture for third-party apps.
+    -->
+    <uses-permission
+        android:name="android.permission.CAPTURE_VOICE_COMMUNICATION_OUTPUT"
+        tools:ignore="ProtectedPermissions" />
     <uses-permission android:name="android.permission.RECORD_AUDIO" />
     <uses-permission android:name="android.permission.READ_CONTACTS" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE"
