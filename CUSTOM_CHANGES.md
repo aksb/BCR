@@ -68,6 +68,10 @@
   再据此写"识别通话开始/结束"的判断逻辑，避免瞎猜。
 - 装上新 APK 后需要手动去 系统设置 → 无障碍 里找到这个服务并手动开启，这一步无法自动
   完成（Android 系统限制，无障碍服务必须用户手动授权）。
+- **踩坑记录**：第一版漏加了 `android:directBootAware="true"`，导致系统在开机解锁前的
+  Direct Boot 阶段直接跳过这个服务（日志里能看到
+  `Ignoring non-encryption-aware service`），服务从来没真正运行过。已补上这个属性，跟
+  `RecorderInCallService` 保持一致。
 
 ## 如何推送到你自己的仓库
 
