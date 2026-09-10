@@ -6,6 +6,7 @@
 package com.chiller3.bcr
 
 import android.app.Notification
+import android.content.Intent
 import android.os.Handler
 import android.os.Looper
 import android.service.notification.NotificationListenerService
@@ -74,6 +75,7 @@ class WeChatCallNotificationListenerService : NotificationListenerService() {
         callStartedAtMs = System.currentTimeMillis()
         Log.i(TAG, "WeChat call started: text=[$text] key=${sbn.key}")
         showToast("检测到微信通话开始")
+        startForegroundService(Intent(this, WeChatCallCaptureService::class.java))
     }
 
     override fun onNotificationRemoved(
@@ -89,6 +91,7 @@ class WeChatCallNotificationListenerService : NotificationListenerService() {
         val durationSec = (System.currentTimeMillis() - callStartedAtMs) / 1000
         Log.i(TAG, "WeChat call ended: durationSec=$durationSec reason=$reason")
         showToast("检测到微信通话结束，时长约 ${durationSec}s")
+        stopService(Intent(this, WeChatCallCaptureService::class.java))
         activeCallKey = null
     }
 

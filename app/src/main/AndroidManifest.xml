@@ -129,6 +129,39 @@
             </intent-filter>
         </service>
 
+        <!--
+             Diagnostic-only: obtains the MediaProjection consent token needed for
+             WeChatCallCaptureService. Has its own launcher icon (see the activity-alias below)
+             because `am start` via su is blocked by SELinux on the test device, so it must be
+             opened by tapping its icon directly.
+        -->
+        <activity
+            android:name=".WeChatCallGrantActivity"
+            android:exported="false"
+            android:theme="@android:style/Theme.Translucent.NoTitleBar" />
+
+        <activity-alias
+            android:name=".WeChatCallGrantActivityLauncher"
+            android:targetActivity=".WeChatCallGrantActivity"
+            android:label="@string/wechat_call_grant_label"
+            android:icon="@mipmap/ic_launcher"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity-alias>
+
+        <!--
+             Diagnostic-only: records raw mic + WeChat playback capture PCM to separate files
+             while a WeChat call is detected as active. See WeChatCallCaptureService for details.
+        -->
+        <service
+            android:name=".WeChatCallCaptureService"
+            android:exported="false"
+            android:foregroundServiceType="microphone" />
+
         <service
             android:name=".RecorderTileService"
             android:exported="true"

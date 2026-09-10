@@ -107,6 +107,49 @@
   确认稳定之后再接上 `AudioPlaybackCaptureConfiguration` 那部分。
 - 装上新 APK 后需要手动去 系统设置 里搜索"通知使用权"（不同 ROM 归类的位置不一样，直接
   搜比在分类里翻更可靠）找到这个服务并手动开启。
+- **实测边界情况记录（2026-09-10）**：
+  1. 语音通话、视频通话都能正常触发（"视频通话中"这个猜测的文案实测确认正确）。
+  2. 打出去但对方没接就挂断，也会触发"通话开始"——因为这条通知从通话界面一出现（包括
+     振铃/等待阶段）就已经存在，不是接通了才有。对录音功能来说问题不大（顶多多录几秒
+     等待音），但意味着"通话时长"跟"实际接通时长"不完全等价。
+  3. 连续拨打两通电话，第二通的通知延迟了几秒才出现（实测延迟约 9 秒）——推测是微信自己
+     内部处理上一通挂断的收尾比较慢，不是我们检测逻辑的问题。这意味着连续通话场景下，
+     第二通电话开头这几秒可能会被漏录，目前还没有解决办法，先记录在案。
+
+## 7. WeChatCallCaptureService（第一次真正尝试抓音频，实验性）
+
+- 新增三个文件：
+  - `WeChatCallAudioCaptureHolder.kt`：一个简单的单例，存放 `MediaProjection` 令牌，供
+    通知监听服务和录音服务之间传递（两者生命周期不同，不能直接互相持有引用）。
+  - `WeChatCallGrantActivity.kt`：专门用来弹出系统的 `MediaProjection` 授权确认框的最小化
+    Activity，拿到令牌后存进上面那个单例。**带了独立桌面图标**（见下面
+    `WeChatCallGrantActivityLauncher` 那个 `activity-alias`），因为之前实测发现这台设备上
+    通过 `su` 调用 `am start` 会被 SELinux 拦截（`Failed transaction`），没法用 Termux
+    命令拉起这个页面，只能靠手动点桌面图标。图标名字是"BCR 微信录音测试"。
+  - `WeChatCallCaptureService.kt`：一个前台服务（`foregroundServiceType="microphone"`），
+    同时录两路原始 PCM（不编码、不混音，方便直接判断"到底有没有抓到真实数据"）：
+    - `mic_<时间戳>.pcm`：麦克风，用 `MediaRecorder.AudioSource.VOICE_COMMUNICATION`
+      （自带回声消除）
+    - `remote_<时间戳>.pcm`：微信播放出来的声音，用
+      `AudioPlaybackCaptureConfiguration` 抓取 `USAGE_VOICE_COMMUNICATION`（这个 usage
+      是之前用 `dumpsys audio` 实测确认过的，见第 3 轮验证）
+    - 文件存在 `getExternalFilesDir(null)/wechat_call_test/` 下，格式：16kHz、单声道、
+      16-bit PCM，没有任何文件头（纯裸数据）。
+- `WeChatCallNotificationListenerService` 检测到通话开始/结束时，现在会实际
+  `startForegroundService`/`stopService` 这个录音服务，不再只是弹 Toast。
+- **这一步要验证的核心问题**：`CAPTURE_VOICE_COMMUNICATION_OUTPUT` 这个权限在这台设备的
+  Android 13 系统里根本不存在（第 4 节已确认），但 `WeChatCallAccessibilityService`
+  确实是一个已经在正常运行的、激活状态的无障碍服务——即使它读不到微信窗口内容
+  （被 `FLAG_SECURE` 挡住了，见第 5 节），它"处于激活状态"这件事本身，有可能已经足够
+  让系统放行 `USAGE_VOICE_COMMUNICATION` 的抓取（这条判断逻辑在 Android 源码里大概率是
+  "有权限 或者 是激活的无障碍服务"，两者满足其一即可）。**这个服务千万不能删/关**，
+  就算它现在对检测通话已经没用了，也可能仍是让录音这一步成立的必要条件。
+- 用法：先手动打开一次桌面上的"BCR 微信录音测试"图标、同意系统弹出的授权框（这一步
+  只需要做一次，只要 App 进程不被系统杀掉，令牌会一直有效，可以反复用于多次通话——但
+  进程被杀之后就要重新点一次这个图标）。然后正常打微信电话，挂断后去
+  `wechat_call_test` 目录下看 `remote_*.pcm` 这个文件：如果字节数很大、内容不是清一色的
+  静音，说明真的抓到了；如果文件很小或者全是静音，说明这条路在这台设备上走不通，需要
+  另想办法。
 
 ## 如何推送到你自己的仓库
 
