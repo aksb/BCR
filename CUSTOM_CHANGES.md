@@ -72,6 +72,15 @@
   Direct Boot 阶段直接跳过这个服务（日志里能看到
   `Ignoring non-encryption-aware service`），服务从来没真正运行过。已补上这个属性，跟
   `RecorderInCallService` 保持一致。
+- **踩坑记录 2**：修好上面那个问题后，服务确实跑起来了，但只抓到一次
+  `TYPE_WINDOW_STATE_CHANGED`（class 是通用的 `android.widget.FrameLayout`，不是正常
+  Activity 类名），且读不到任何文字。原因是原来用 `rootInActiveWindow` 取根节点——这个
+  API 拿的是"当前有输入焦点的窗口"，而微信的通话界面大概率是以悬浮层/系统弹出窗的形式画
+  出来的，跟"活跃窗口"不是同一个，导致取到的根本不是通话界面那个窗口。改成用
+  `windows`（遍历所有当前可见窗口）逐个检查每个窗口自己的包名，不再依赖
+  `rootInActiveWindow`。同时把配置文件里的 `packageNames="com.tencent.mm"` 限制也去掉了，
+  改成代码里对每个窗口单独判断包名——因为悬浮窗触发的事件，系统未必会把它标记成属于微信
+  这个包，配置层面的包名过滤可能会把这类事件直接吞掉。
 
 ## 如何推送到你自己的仓库
 

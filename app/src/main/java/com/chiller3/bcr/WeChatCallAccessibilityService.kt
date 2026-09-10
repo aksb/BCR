@@ -14,11 +14,17 @@ import android.view.accessibility.AccessibilityNodeInfo
  * Diagnostic-only accessibility service.
  *
  * This does NOT detect calls and does NOT record anything yet. Its only job right now is to
- * log WeChat's (com.tencent.mm) window class name and visible on-screen text every time its
- * foreground window changes, so that the specific text/class name pattern that appears during
- * an actual voice/video call can be identified from logcat.
+ * enumerate every currently visible window on every relevant event, log the ones that belong to
+ * WeChat (com.tencent.mm), and dump their class name and visible on-screen text -- so the
+ * specific text/class name pattern that appears during an actual voice/video call can be
+ * identified from logcat.
  *
- * Once that pattern is known, this class will be extended to recognize "call started" /
+ * Deliberately does NOT filter by event.packageName or by the accessibility service config's
+ * packageNames attribute: WeChat's call UI may be drawn as an overlay window rather than a
+ * normal Activity, and such windows aren't always reliably tagged with their owning package on
+ * the event itself. Instead, every window's own root node package name is checked directly.
+ *
+ * Once the real pattern is known, this class will be extended to recognize "call started" /
  * "call ended" and expose that as a proper state change instead of raw logging.
  */
 class WeChatCallAccessibilityService : AccessibilityService() {
@@ -29,29 +35,45 @@ class WeChatCallAccessibilityService : AccessibilityService() {
 
     override fun onServiceConnected() {
         super.onServiceConnected()
-        Log.d(TAG, "Accessibility service connected and watching $WECHAT_PACKAGE")
+        Log.d(TAG, "Accessibility service connected")
     }
 
     override fun onAccessibilityEvent(event: AccessibilityEvent?) {
         event ?: return
-        if (event.packageName?.toString() != WECHAT_PACKAGE) {
-            return
-        }
+        val windowList = windows ?: return
 
-        val eventTypeName = AccessibilityEvent.eventTypeToString(event.eventType)
-        Log.d(TAG, "Event: type=$eventTypeName class=${event.className}")
+        var loggedHeader = false
 
-        @Suppress("DEPRECATION")
-        val root = rootInActiveWindow ?: return
-        try {
-            val texts = mutableListOf<String>()
-            collectText(root, texts)
-            if (texts.isNotEmpty()) {
-                Log.d(TAG, "Visible text: ${texts.joinToString(" | ")}")
+        for (window in windowList) {
+            val root = window.root ?: continue
+
+            try {
+                if (root.packageName?.toString() != WECHAT_PACKAGE) {
+                    continue
+                }
+
+                if (!loggedHeader) {
+                    val eventTypeName = AccessibilityEvent.eventTypeToString(event.eventType)
+                    Log.d(
+                        TAG,
+                        "Event: type=$eventTypeName class=${event.className} " +
+                            "eventPackage=${event.packageName}",
+                    )
+                    loggedHeader = true
+                }
+
+                val texts = mutableListOf<String>()
+                collectText(root, texts)
+                Log.d(
+                    TAG,
+                    "WeChat window: type=${window.type} layer=${window.layer} " +
+                        "class=${root.className} title=${window.title} " +
+                        "texts=${texts.joinToString(" | ")}",
+                )
+            } finally {
+                @Suppress("DEPRECATION")
+                root.recycle()
             }
-        } finally {
-            @Suppress("DEPRECATION")
-            root.recycle()
         }
     }
 
