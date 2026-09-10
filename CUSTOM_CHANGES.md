@@ -81,6 +81,25 @@
   `rootInActiveWindow`。同时把配置文件里的 `packageNames="com.tencent.mm"` 限制也去掉了，
   改成代码里对每个窗口单独判断包名——因为悬浮窗触发的事件，系统未必会把它标记成属于微信
   这个包，配置层面的包名过滤可能会把这类事件直接吞掉。
+- **最终结论（2026-09-10，已用 `dumpsys activity activities` + `dumpsys accessibility`
+  在同一次调用里交叉验证）**：微信语音/视频通话用的是同一个 Activity
+  （`com.tencent.mm.plugin.voip.ui.VideoActivity`）。即使确认它正处于系统聚焦、最前台状态，
+  无障碍系统的窗口列表里依然完全没有这个窗口——不是时机问题、不是代码问题，是系统级别把这
+  个窗口对第三方无障碍服务隐藏了（大概率是 `FLAG_SECURE`）。**这条路线到此为止**，
+  `WeChatCallAccessibilityService` 保留在代码里仅作记录，不再往这个方向投入。改用下面的
+  通知监听方案做通话检测。
+
+## 6. WeChatCallNotificationListenerService（诊断第一步，尚不录音）
+
+- 新增 `WeChatCallNotificationListenerService.kt`，在 `AndroidManifest.xml` 里注册为一个
+  `NotificationListenerService`。
+- 实测确认：微信通话时会在通知栏发一条常驻通知（标题是联系人昵称，内容是"语音通话中"/
+  "视频通话中"），这条通知不受无障碍那条路踩到的限制影响。
+- 目前只打日志，把微信发出的每一条通知的标题、正文、子文本、大文本、ticker、是否常驻、
+  分类都记下来，用于摸清楚"来电振铃 → 接通 → 挂断"整个过程中这条通知具体是怎么变化的，
+  再据此写判断规则。
+- 装上新 APK 后需要手动去 系统设置 → 应用 → 特殊访问权限 → 通知使用权 里找到这个服务并
+  手动开启，这一步同样无法自动完成（系统强制要求用户手动授权）。
 
 ## 如何推送到你自己的仓库
 
