@@ -97,8 +97,8 @@
              Diagnostic-only accessibility service for observing WeChat's call screen.
              Does not record or capture anything yet; see WeChatCallAccessibilityService.
              CONFIRMED (2026-09-10): WeChat's voice/video call Activity is hidden from
-             accessibility window content on this device even while focused -- likely
-             FLAG_SECURE. Kept for reference / possible future use, but detection has moved
+             accessibility window content on this device even while focused (likely due to
+             FLAG_SECURE). Kept for reference / possible future use, but detection has moved
              to WeChatCallNotificationListenerService below.
         -->
         <service
