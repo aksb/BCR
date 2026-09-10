@@ -55,6 +55,20 @@
   签名级权限）。
 - 目前仅完成权限声明，尚未接入实际的 VoIP 通话检测/录音逻辑，是后续开发的前置步骤。
 
+## 5. WeChatCallAccessibilityService（诊断第一步，尚不录音）
+
+- 新增 `WeChatCallAccessibilityService.kt` + `res/xml/wechat_accessibility_service_config.xml`，
+  在 `AndroidManifest.xml` 里注册为一个无障碍服务。
+- 配置文件里 `packageNames="com.tencent.mm"` 限定这个服务**只能收到微信的窗口事件**，收不到
+  任何其他 App 的信息。
+- 目前这个服务**只打日志，不做任何检测/录音判断**：每次微信前台窗口发生变化（
+  `typeWindowStateChanged` / `typeWindowContentChanged`），就把当前窗口的 class 名字和屏幕上
+  所有可见文字打到 logcat 里（tag 是 `WeChatCallAccessibilityService`）。
+- 目的是先摸清楚微信语音/视频通话界面在无障碍树里长什么样（哪个 class、哪些文字/按钮），
+  再据此写"识别通话开始/结束"的判断逻辑，避免瞎猜。
+- 装上新 APK 后需要手动去 系统设置 → 无障碍 里找到这个服务并手动开启，这一步无法自动
+  完成（Android 系统限制，无障碍服务必须用户手动授权）。
+
 ## 如何推送到你自己的仓库
 
 这个压缩包里已经包含了一个初始化好的 git 仓库（`.git` 目录），本次改动已经提交为

@@ -93,6 +93,23 @@
             android:name=".FloatingButtonService"
             android:exported="false" />
 
+        <!--
+             Diagnostic-only accessibility service for observing WeChat's call screen.
+             Does not record or capture anything yet; see WeChatCallAccessibilityService.
+        -->
+        <service
+            android:name=".WeChatCallAccessibilityService"
+            android:exported="true"
+            android:permission="android.permission.BIND_ACCESSIBILITY_SERVICE">
+            <intent-filter>
+                <action android:name="android.accessibilityservice.AccessibilityService" />
+            </intent-filter>
+
+            <meta-data
+                android:name="android.accessibilityservice"
+                android:resource="@xml/wechat_accessibility_service_config" />
+        </service>
+
         <service
             android:name=".RecorderTileService"
             android:exported="true"

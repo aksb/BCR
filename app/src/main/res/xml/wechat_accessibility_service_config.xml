@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+    SPDX-License-Identifier: GPL-3.0-only
+
+    Diagnostic configuration for WeChatCallAccessibilityService.
+
+    - packageNames: restrict events to WeChat only, so this service never sees or reports
+      anything about any other app on the device.
+    - accessibilityEventTypes: only window state/content changes are needed to detect when
+      WeChat's call screen appears or disappears.
+    - canRetrieveWindowContent: required to read the visible text on WeChat's screen, which
+      is how we will eventually detect the in-call state.
+-->
+<accessibility-service xmlns:android="http://schemas.android.com/apk/res/android"
+    android:accessibilityEventTypes="typeWindowStateChanged|typeWindowContentChanged"
+    android:accessibilityFeedbackType="feedbackGeneric"
+    android:accessibilityFlags="flagRetrieveInteractiveWindows|flagReportViewIds"
+    android:canRetrieveWindowContent="true"
+    android:notificationTimeout="100"
+    android:packageNames="com.tencent.mm" />
