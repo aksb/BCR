@@ -22,12 +22,18 @@ import android.os.Looper
 import android.util.Log
 import java.io.File
 import java.io.FileOutputStream
+import java.nio.ByteBuffer
+import java.nio.ByteOrder
 import java.util.concurrent.atomic.AtomicBoolean
 import kotlin.concurrent.thread
 
 /**
  * For the duration of a single detected WeChat call, this records the microphone to
- * mic_<timestamp>.pcm under getExternalFilesDir(null)/wechat_call_test/ (RAW, headerless PCM).
+ * mic_<timestamp>.wav under getExternalFilesDir(null)/wechat_call_test/. Recording happens to a
+ * temporary headerless .pcm file as before (streaming write, no need to know the final length up
+ * front); once stopped, that raw file is wrapped with a standard 44-byte WAV header and the raw
+ * .pcm is deleted, so the end result is a normal, directly-playable file -- no separate
+ * ffmpeg/manual conversion step needed to listen to a test recording.
  *
  * CONFIRMED (2026-09-10/11, two separate real-call tests, once with the accessibility service
  * enabled and once disabled -- both produced the exact same result): capturing
@@ -78,6 +84,8 @@ class WeChatCallCaptureService : Service() {
     private var micBytesWritten = 0L
     private var remoteBytesWritten = 0L
     private var testMode = false
+    private var micFile: File? = null
+    private var remoteFile: File? = null
 
     override fun onBind(intent: Intent?): IBinder? = null
 
@@ -123,6 +131,8 @@ class WeChatCallCaptureService : Service() {
         }
         micBytesWritten = 0
         remoteBytesWritten = 0
+        micFile = null
+        remoteFile = null
 
         val timestamp = System.currentTimeMillis()
         val bufferSize = AudioRecord
@@ -143,6 +153,7 @@ class WeChatCallCaptureService : Service() {
         micRecord = mic
 
         val micFile = File(outputDir(), "mic_$timestamp.pcm")
+        this.micFile = micFile
         micThread = thread(name = "WeChatCallCaptureMic") {
             recordLoop(mic, micFile) { micBytesWritten += it }
         }
@@ -191,6 +202,7 @@ class WeChatCallCaptureService : Service() {
                     remoteRecord = remote
 
                     val remoteFile = File(outputDir(), "remote_$timestamp.pcm")
+                    this.remoteFile = remoteFile
                     remoteThread = thread(name = "WeChatCallCaptureRemote") {
                         recordLoop(remote, remoteFile) { remoteBytesWritten += it }
                     }
@@ -249,13 +261,69 @@ class WeChatCallCaptureService : Service() {
         micRecord = null
         remoteRecord = null
 
+        val micWav = micFile?.let { wrapPcmAsWav(it) }
+        val remoteWav = remoteFile?.let { wrapPcmAsWav(it) }
+        micFile = null
+        remoteFile = null
+
         Log.i(
             TAG,
             "Capture stopped (mode=${if (testMode) "SELF-TEST" else "WECHAT_CALL"}): " +
                 "micBytes=$micBytesWritten remoteBytes=$remoteBytesWritten " +
+                "micWav=${micWav?.name} remoteWav=${remoteWav?.name} " +
                 "(non-zero remoteBytes containing real audio, not just silence, means it worked)",
         )
 
         super.onDestroy()
+    }
+
+    /**
+     * Wraps a raw (headerless) 16kHz/mono/16-bit PCM file with a standard 44-byte WAV header and
+     * deletes the original .pcm file. Reads the whole file into memory to do so -- fine for
+     * these short test recordings (tens of seconds to a few minutes), but would need a
+     * write-header-then-patch-at-the-end approach instead for anything long enough that loading
+     * it all into memory becomes a problem.
+     */
+    private fun wrapPcmAsWav(pcmFile: File): File? {
+        if (!pcmFile.exists() || pcmFile.length() == 0L) {
+            return null
+        }
+
+        val wavFile = File(pcmFile.parentFile, pcmFile.nameWithoutExtension + ".wav")
+        return try {
+            val pcmData = pcmFile.readBytes()
+            FileOutputStream(wavFile).use { out ->
+                out.write(buildWavHeader(pcmData.size))
+                out.write(pcmData)
+            }
+            pcmFile.delete()
+            wavFile
+        } catch (e: Exception) {
+            Log.e(TAG, "Failed to wrap ${pcmFile.name} as WAV", e)
+            null
+        }
+    }
+
+    private fun buildWavHeader(dataSize: Int): ByteArray {
+        val channels = 1
+        val bitsPerSample = 16
+        val byteRate = SAMPLE_RATE * channels * bitsPerSample / 8
+        val blockAlign = channels * bitsPerSample / 8
+
+        return ByteBuffer.allocate(44).order(ByteOrder.LITTLE_ENDIAN).apply {
+            put("RIFF".toByteArray(Charsets.US_ASCII))
+            putInt(36 + dataSize)
+            put("WAVE".toByteArray(Charsets.US_ASCII))
+            put("fmt ".toByteArray(Charsets.US_ASCII))
+            putInt(16) // fmt chunk size for PCM
+            putShort(1) // audio format: 1 = PCM
+            putShort(channels.toShort())
+            putInt(SAMPLE_RATE)
+            putInt(byteRate)
+            putShort(blockAlign.toShort())
+            putShort(bitsPerSample.toShort())
+            put("data".toByteArray(Charsets.US_ASCII))
+            putInt(dataSize)
+        }.array()
     }
 }
