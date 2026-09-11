@@ -7,6 +7,9 @@ package com.chiller3.bcr
 
 import android.app.Notification
 import android.content.Intent
+import android.media.AudioAttributes
+import android.media.AudioManager
+import android.media.AudioPlaybackConfiguration
 import android.os.Handler
 import android.os.Looper
 import android.service.notification.NotificationListenerService
@@ -25,12 +28,25 @@ import android.widget.Toast
  *
  * DIAGNOSTIC ADDITION (2026-09-11): real recordings consistently start about 10 seconds late and
  * are missing the first ~10 seconds of audio, even though this class's own detection fires
- * essentially instantly relative to whenever the matched notification actually posts. The
- * leading theory is that WeChat's notification goes through an earlier, unmatched intermediate
- * state (e.g. "连接中"-style text) before settling on "语音通话中"/"视频通话中", and that real
- * audio may already be flowing during that earlier state. logAllWeChatNotifications() below logs
- * EVERY notification WeChat posts/removes, matched or not, ongoing or not, specifically to
- * capture that possible intermediate state from real call data instead of guessing at it.
+ * essentially instantly relative to whenever the matched notification actually posts (confirmed:
+ * 47ms from notification to AudioRecord actually starting). Real-call testing with the extra
+ * "ALL: POSTED"/"ALL: REMOVED" logging below found NO earlier intermediate notification state --
+ * WeChat posts exactly one notification, already saying "语音通话中", and the gap between it
+ * appearing and the notification disappearing lines up exactly with the recorded file's
+ * duration. So the missing seconds are specifically the gap between the user actually being
+ * connected and WeChat getting around to posting/updating that notification -- entirely on
+ * WeChat's side, not fixable by reacting faster to the notification itself.
+ *
+ * registerPlaybackObserver() below is a second, independent, PARALLEL signal source that doesn't
+ * replace the notification-based detection above (nothing here triggers WeChatCallCaptureService
+ * yet) -- it only logs, with a precise timestamp, whenever the system reports a
+ * USAGE_VOICE_COMMUNICATION playback stream becoming active/inactive anywhere on the device, via
+ * the public AudioManager.AudioPlaybackCallback API (no special permission needed -- this is
+ * just a status callback, not audio capture, so it isn't affected by the
+ * USAGE_VOICE_COMMUNICATION capture restriction confirmed elsewhere in this project). The idea is
+ * to compare its timestamp against the notification-based one on the same real call: if it fires
+ * meaningfully earlier, it's a better trigger signal and detection can switch over to it; if not,
+ * this dead-ends the same way AudioPlaybackCaptureConfiguration did.
  */
 class WeChatCallNotificationListenerService : NotificationListenerService() {
     companion object {
@@ -49,10 +65,12 @@ class WeChatCallNotificationListenerService : NotificationListenerService() {
     // guaranteed unique per notification instance by the system.
     private var activeCallKey: String? = null
     private var callStartedAtMs: Long = 0
+    private var playbackCallback: AudioManager.AudioPlaybackCallback? = null
 
     override fun onListenerConnected() {
         super.onListenerConnected()
         Log.d(TAG, "Notification listener connected")
+        registerPlaybackObserver()
     }
 
     override fun onNotificationPosted(sbn: StatusBarNotification?) {
@@ -129,7 +147,40 @@ class WeChatCallNotificationListenerService : NotificationListenerService() {
         }
     }
 
+    /**
+     * See class doc. Purely observational -- logs a precise timestamp whenever a
+     * USAGE_VOICE_COMMUNICATION playback stream anywhere on the device becomes active/inactive.
+     * Does not trigger recording; that's still driven entirely by the notification-based
+     * detection above, until/unless this proves to be a meaningfully earlier signal.
+     */
+    private fun registerPlaybackObserver() {
+        val audioManager = getSystemService(AudioManager::class.java) ?: return
+        val callback = object : AudioManager.AudioPlaybackCallback() {
+            override fun onPlaybackConfigChanged(configs: MutableList<AudioPlaybackConfiguration>?) {
+                configs?.forEach { config ->
+                    if (config.audioAttributes.usage == AudioAttributes.USAGE_VOICE_COMMUNICATION) {
+                        Log.d(
+                            TAG,
+                            "PLAYBACK_CB: usage=VOICE_COMMUNICATION isActive=${config.isActive}",
+                        )
+                    }
+                }
+            }
+        }
+        audioManager.registerAudioPlaybackCallback(callback, Handler(Looper.getMainLooper()))
+        playbackCallback = callback
+    }
+
+    private fun unregisterPlaybackObserver() {
+        playbackCallback?.let {
+            val audioManager = getSystemService(AudioManager::class.java)
+            audioManager?.unregisterAudioPlaybackCallback(it)
+        }
+        playbackCallback = null
+    }
+
     override fun onListenerDisconnected() {
+        unregisterPlaybackObserver()
         super.onListenerDisconnected()
         Log.d(TAG, "Notification listener disconnected")
     }

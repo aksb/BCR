@@ -20,6 +20,8 @@ import android.os.Handler
 import android.os.IBinder
 import android.os.Looper
 import android.util.Log
+import androidx.documentfile.provider.DocumentFile
+import com.chiller3.bcr.output.OutputDirUtils
 import java.io.File
 import java.io.FileOutputStream
 import java.nio.ByteBuffer
@@ -28,12 +30,14 @@ import java.util.concurrent.atomic.AtomicBoolean
 import kotlin.concurrent.thread
 
 /**
- * For the duration of a single detected WeChat call, this records the microphone to
- * mic_<timestamp>.wav under getExternalFilesDir(null)/wechat_call_test/. Recording happens to a
- * temporary headerless .pcm file as before (streaming write, no need to know the final length up
- * front); once stopped, that raw file is wrapped with a standard 44-byte WAV header and the raw
- * .pcm is deleted, so the end result is a normal, directly-playable file -- no separate
- * ffmpeg/manual conversion step needed to listen to a test recording.
+ * For the duration of a single detected WeChat call, this records the microphone to a temporary
+ * headerless .pcm file (streaming write, no need to know the final length up front). Once
+ * stopped, that raw file is wrapped with a standard 44-byte WAV header, and -- for real WeChat
+ * calls only, not the USAGE_MEDIA self-test -- moved into the user's configured output directory
+ * (same one real phone call recordings use, from Preferences.outputDirOrDefault) under a
+ * "WeChat" subfolder, using the same OutputDirUtils helper RecorderThread uses for real calls.
+ * The self-test's files are left in the app's own local scratch directory since they're not
+ * meant to be kept.
  *
  * CONFIRMED (2026-09-10/11, two separate real-call tests, once with the accessibility service
  * enabled and once disabled -- both produced the exact same result): capturing
@@ -266,11 +270,28 @@ class WeChatCallCaptureService : Service() {
         micFile = null
         remoteFile = null
 
+        // Only real WeChat calls get moved into the user's actual output directory. Self-test
+        // recordings are diagnostic scratch files, not meant to be kept alongside real ones.
+        var finalMicFile: DocumentFile? = null
+        if (!testMode && micWav != null) {
+            finalMicFile = try {
+                val dirUtils = OutputDirUtils(applicationContext, OutputDirUtils.NULL_REDACTOR)
+                dirUtils.moveToOutputDir(
+                    DocumentFile.fromFile(micWav),
+                    listOf("WeChat", micWav.name),
+                    "audio/x-wav",
+                )
+            } catch (e: Exception) {
+                Log.e(TAG, "Failed to move $micWav into user output directory", e)
+                null
+            }
+        }
+
         Log.i(
             TAG,
             "Capture stopped (mode=${if (testMode) "SELF-TEST" else "WECHAT_CALL"}): " +
                 "micBytes=$micBytesWritten remoteBytes=$remoteBytesWritten " +
-                "micWav=${micWav?.name} remoteWav=${remoteWav?.name} " +
+                "finalMicFile=${finalMicFile?.uri} remoteWav=${remoteWav?.name} " +
                 "(non-zero remoteBytes containing real audio, not just silence, means it worked)",
         )
 
