@@ -157,14 +157,19 @@ class WeChatCallNotificationListenerService : NotificationListenerService() {
         val audioManager = getSystemService(AudioManager::class.java) ?: return
         val callback = object : AudioManager.AudioPlaybackCallback() {
             override fun onPlaybackConfigChanged(configs: MutableList<AudioPlaybackConfiguration>?) {
-                configs?.forEach { config ->
-                    if (config.audioAttributes.usage == AudioAttributes.USAGE_VOICE_COMMUNICATION) {
-                        Log.d(
-                            TAG,
-                            "PLAYBACK_CB: usage=VOICE_COMMUNICATION isActive=${config.isActive}",
-                        )
-                    }
-                }
+                // AudioPlaybackConfiguration.isActive() is a hidden/@SystemApi method, not part
+                // of the public SDK, so it can't be called here. Instead: this callback re-sends
+                // the FULL list of currently active playback configs every time it changes, so
+                // whether a USAGE_VOICE_COMMUNICATION entry is present in THIS list already
+                // tells us whether one is active right now -- no separate active flag needed.
+                val hasVoiceCommunication = configs?.any {
+                    it.audioAttributes.usage == AudioAttributes.USAGE_VOICE_COMMUNICATION
+                } == true
+                Log.d(
+                    TAG,
+                    "PLAYBACK_CB: configsCount=${configs?.size} " +
+                        "hasVoiceCommunication=$hasVoiceCommunication",
+                )
             }
         }
         audioManager.registerAudioPlaybackCallback(callback, Handler(Looper.getMainLooper()))
