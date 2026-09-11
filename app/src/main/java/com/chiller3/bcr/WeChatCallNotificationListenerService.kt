@@ -23,9 +23,14 @@ import android.widget.Toast
  * (video calls are expected to say "视频通话中", not yet directly observed). When the call ends,
  * WeChat cancels that same notification itself (reason=REASON_APP_CANCEL).
  *
- * This still does NOT record anything -- it only detects the start/end boundary and reports it
- * via Toast + Log, so the detection logic itself can be validated across several real calls
- * before any audio capture is wired up.
+ * DIAGNOSTIC ADDITION (2026-09-11): real recordings consistently start about 10 seconds late and
+ * are missing the first ~10 seconds of audio, even though this class's own detection fires
+ * essentially instantly relative to whenever the matched notification actually posts. The
+ * leading theory is that WeChat's notification goes through an earlier, unmatched intermediate
+ * state (e.g. "连接中"-style text) before settling on "语音通话中"/"视频通话中", and that real
+ * audio may already be flowing during that earlier state. logAllWeChatNotifications() below logs
+ * EVERY notification WeChat posts/removes, matched or not, ongoing or not, specifically to
+ * capture that possible intermediate state from real call data instead of guessing at it.
  */
 class WeChatCallNotificationListenerService : NotificationListenerService() {
     companion object {
@@ -52,7 +57,15 @@ class WeChatCallNotificationListenerService : NotificationListenerService() {
 
     override fun onNotificationPosted(sbn: StatusBarNotification?) {
         sbn ?: return
-        if (sbn.packageName != WECHAT_PACKAGE || !sbn.isOngoing) {
+        if (sbn.packageName != WECHAT_PACKAGE) {
+            return
+        }
+
+        // Unconditional diagnostic log -- see class doc. Runs regardless of whether this
+        // notification matches our detection keywords, unlike everything below it.
+        Log.d(TAG, "ALL: POSTED ${describe(sbn)}")
+
+        if (!sbn.isOngoing) {
             return
         }
 
@@ -84,6 +97,10 @@ class WeChatCallNotificationListenerService : NotificationListenerService() {
         reason: Int,
     ) {
         sbn ?: return
+        if (sbn.packageName == WECHAT_PACKAGE) {
+            Log.d(TAG, "ALL: REMOVED (reason=$reason) ${describe(sbn)}")
+        }
+
         if (sbn.key != activeCallKey) {
             return
         }
@@ -93,6 +110,17 @@ class WeChatCallNotificationListenerService : NotificationListenerService() {
         showToast("检测到微信通话结束，时长约 ${durationSec}s")
         stopService(Intent(this, WeChatCallCaptureService::class.java))
         activeCallKey = null
+    }
+
+    private fun describe(sbn: StatusBarNotification): String {
+        val extras = sbn.notification.extras
+        val title = extras.getCharSequence(Notification.EXTRA_TITLE)
+        val text = extras.getCharSequence(Notification.EXTRA_TEXT)
+        val subText = extras.getCharSequence(Notification.EXTRA_SUB_TEXT)
+        val ticker = sbn.notification.tickerText
+        return "key=${sbn.key} ongoing=${sbn.isOngoing} category=${sbn.notification.category} " +
+            "postTimeMs=${sbn.postTime} title=[$title] text=[$text] subText=[$subText] " +
+            "ticker=[$ticker]"
     }
 
     private fun showToast(message: String) {

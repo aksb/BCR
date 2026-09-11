@@ -9,11 +9,9 @@ import android.app.Notification
 import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.app.Service
-import android.content.Context
 import android.content.Intent
 import android.media.AudioAttributes
 import android.media.AudioFormat
-import android.media.AudioManager
 import android.media.AudioPlaybackCaptureConfiguration
 import android.media.AudioRecord
 import android.media.MediaRecorder
@@ -41,13 +39,13 @@ import kotlin.concurrent.thread
  * EXTRA_TEST_USAGE_MEDIA below, which is kept around for re-testing on other devices/ROMs where
  * this may behave differently.
  *
- * Given that dead end, real WeChat calls (testMode == false) now fall back to the low-tech
- * approach: force the speakerphone on for the duration of the call, and record with a plain
- * MediaRecorder.AudioSource.MIC (NOT VOICE_COMMUNICATION -- that source applies echo
- * cancellation, which would filter out most of the speakerphone audio it's specifically meant to
- * pick up here, defeating the point). This means a single mixed-in-the-room recording of both
- * sides, at whatever quality the speaker + mic roundtrip gives -- a real step down from a clean
- * two-track digital capture, but the only thing left that actually works on this device.
+ * Given that dead end, real WeChat calls (testMode == false) now record with a plain
+ * MediaRecorder.AudioSource.MIC. Real-device listening test (2026-09-11) confirmed both sides
+ * come through clearly WITHOUT needing speakerphone on -- an earlier version of this class tried
+ * to force speakerphone on automatically via AudioManager, but that call had no observable
+ * effect at all (WeChat manages its own audio routing internally and appears to ignore the
+ * system-level speakerphone toggle), and since the recording works fine either way, that code
+ * was removed rather than left in as dead weight.
  *
  * Started/stopped by WeChatCallNotificationListenerService when it detects a WeChat call
  * starting/ending.
@@ -80,7 +78,6 @@ class WeChatCallCaptureService : Service() {
     private var micBytesWritten = 0L
     private var remoteBytesWritten = 0L
     private var testMode = false
-    private var previousSpeakerphoneOn: Boolean? = null
 
     override fun onBind(intent: Intent?): IBinder? = null
 
@@ -132,21 +129,10 @@ class WeChatCallCaptureService : Service() {
             .getMinBufferSize(SAMPLE_RATE, CHANNEL_CONFIG_IN, AUDIO_FORMAT)
             .coerceAtLeast(4096)
 
-        // For real WeChat calls, force speakerphone on so the mic can actually pick up the
-        // other side (see class doc for why VOICE_COMMUNICATION's echo cancellation would
-        // otherwise filter that right back out). Not done in test mode, which has nothing to
-        // do with phone calls.
-        if (!testMode) {
-            val audioManager = getSystemService(Context.AUDIO_SERVICE) as AudioManager
-            previousSpeakerphoneOn = audioManager.isSpeakerphoneOn
-            @Suppress("DEPRECATION")
-            audioManager.isSpeakerphoneOn = true
-        }
-
         // Plain MIC source (not VOICE_COMMUNICATION): for real calls, that source's built-in
-        // echo cancellation would suppress most of the speakerphone audio this is meant to
-        // pick up in the first place. For the USAGE_MEDIA self-test, it doesn't matter either
-        // way, so the same source is used for consistency.
+        // echo cancellation would suppress most of what a speakerphone/roundtrip capture is
+        // meant to pick up. Not that it matters here -- real-device testing confirmed both
+        // sides come through clearly with plain MIC regardless of speakerphone state.
         val mic = AudioRecord(
             MediaRecorder.AudioSource.MIC,
             SAMPLE_RATE,
@@ -222,7 +208,7 @@ class WeChatCallCaptureService : Service() {
         // printed even when the remote side had already failed above, which was misleading.
         Log.i(
             TAG,
-            "Mode: ${if (testMode) "SELF-TEST (USAGE_MEDIA)" else "WECHAT_CALL (speakerphone + MIC)"}",
+            "Mode: ${if (testMode) "SELF-TEST (USAGE_MEDIA)" else "WECHAT_CALL (plain MIC)"}",
         )
         Log.i(TAG, "Mic capture: OK")
         Log.i(TAG, if (remoteReady) "Playback capture: OK" else "Playback capture: FAILED")
@@ -262,13 +248,6 @@ class WeChatCallCaptureService : Service() {
         }
         micRecord = null
         remoteRecord = null
-
-        previousSpeakerphoneOn?.let { wasOn ->
-            val audioManager = getSystemService(Context.AUDIO_SERVICE) as AudioManager
-            @Suppress("DEPRECATION")
-            audioManager.isSpeakerphoneOn = wasOn
-        }
-        previousSpeakerphoneOn = null
 
         Log.i(
             TAG,
