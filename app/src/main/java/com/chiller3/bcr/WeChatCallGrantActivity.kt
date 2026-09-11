@@ -6,6 +6,7 @@
 package com.chiller3.bcr
 
 import android.content.Context
+import android.content.Intent
 import android.media.projection.MediaProjectionManager
 import android.os.Bundle
 import android.util.Log
@@ -39,9 +40,18 @@ class WeChatCallGrantActivity : ComponentActivity() {
             val projection = manager.getMediaProjection(result.resultCode, data)
             WeChatCallAudioCaptureHolder.mediaProjection = projection
             Log.i(TAG, "MediaProjection granted")
+
+            // Immediately run a 15-second self-test using USAGE_MEDIA (not WeChat-related at
+            // all) to isolate whether AudioPlaybackCaptureConfiguration works AT ALL on this
+            // device, independent of whether USAGE_VOICE_COMMUNICATION specifically is blocked.
+            val testIntent = Intent(this, WeChatCallCaptureService::class.java).apply {
+                putExtra(WeChatCallCaptureService.EXTRA_TEST_USAGE_MEDIA, true)
+            }
+            startForegroundService(testIntent)
+
             Toast.makeText(
                 this,
-                "已获取录音授权，现在可以正常打微信电话测试了",
+                "已获取授权，现在开始15秒自测——请播放一段音乐或视频",
                 Toast.LENGTH_LONG,
             ).show()
         } else {

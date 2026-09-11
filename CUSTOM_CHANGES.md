@@ -150,6 +150,31 @@
   `wechat_call_test` 目录下看 `remote_*.pcm` 这个文件：如果字节数很大、内容不是清一色的
   静音，说明真的抓到了；如果文件很小或者全是静音，说明这条路在这台设备上走不通，需要
   另想办法。
+- **实测结果（2026-09-10）**：确认排除了"进程被杀导致令牌失效"这个可能——全程盯着测试，
+  每次打电话前都重新点过桌面图标、状态栏也确认了录屏图标常驻。但 `remote_*.pcm` 始终没
+  被创建，`mic_*.pcm` 正常（约 1.4MB/40 秒）。日志明确抓到了具体报错：
+  ```
+  E WeChatCallCaptureService: Failed to start playback capture
+  E WeChatCallCaptureService: java.lang.UnsupportedOperationException: Error: could not register audio policy
+       at android.media.AudioRecord$Builder.buildAudioPlaybackCaptureRecord(AudioRecord.java:778)
+       at android.media.AudioRecord$Builder.build(AudioRecord.java:909)
+       at com.chiller3.bcr.WeChatCallCaptureService.startCapture(WeChatCallCaptureService.kt:156)
+  ```
+  `dumpsys media_projection` 确认 `MediaProjection` 本身是有效的（排除"忘记授权"），
+  说明卡在 `AudioRecord.Builder().build()` 这一步——系统的 `AudioPolicyManager` 直接拒绝
+  注册这个音频策略。这个异常信息比较笼统，权限不够、无障碍身份不满足条件、或者这台设备
+  /ROM 干脆没实现这个能力，三种情况在 Java 层看到的都是同一句话，没法单从这行异常区分。
+- **新增 `EXTRA_TEST_USAGE_MEDIA` 自测模式**：为了把"是通话这个 usage 被单独拦"和
+  "整个 AudioPlaybackCapture 机制在这台设备上就是坏的"这两种可能分开，`WeChatCallGrantActivity`
+  拿到 `MediaProjection` 后，现在会自动额外跑一次 15 秒的自测——把
+  `addMatchingUsage(USAGE_VOICE_COMMUNICATION)` 换成 `addMatchingUsage(USAGE_MEDIA)`
+  （普通应用允许抓取的类型，不需要任何特殊权限），全程与微信无关，测试期间手动放一段
+  音乐/视频即可。如果这次 `remote_*.pcm` 有数据，说明抓取机制本身是通的，问题只在"通话"
+  这个特定 usage 被单独拦截；如果这次依然是 0 字节或者同样的异常，说明整个机制在这台
+  设备上都不可用，跟"是不是通话"无关。
+- 顺带把日志从容易误导人的单一"Capture started"行，拆成了三行清楚的状态
+  （`Mic capture: OK` / `Playback capture: OK|FAILED`），避免"对方声音其实没成功，但日志
+  看起来像是都成功了"这种误判。
 
 ## 如何推送到你自己的仓库
 

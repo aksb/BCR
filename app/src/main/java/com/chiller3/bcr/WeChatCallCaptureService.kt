@@ -16,7 +16,9 @@ import android.media.AudioPlaybackCaptureConfiguration
 import android.media.AudioRecord
 import android.media.MediaRecorder
 import android.os.Build
+import android.os.Handler
 import android.os.IBinder
+import android.os.Looper
 import android.util.Log
 import java.io.File
 import java.io.FileOutputStream
@@ -36,13 +38,14 @@ import kotlin.concurrent.thread
  *
  * This does NOT mix, encode, resample, or otherwise post-process anything. The sole purpose
  * right now is to find out whether remote_*.pcm actually contains real audio data at all.
- * Android normally forbids third-party apps from capturing USAGE_VOICE_COMMUNICATION at all;
- * whether WeChatCallAccessibilityService simply being an active, bound accessibility service is
- * enough to unlock it on this device (in place of the CAPTURE_VOICE_COMMUNICATION_OUTPUT
- * permission, which doesn't even exist on this Android 13 build -- see CUSTOM_CHANGES.md) is
- * the open question this class exists to answer. A resulting file with a large, non-zero byte
- * count that is NOT just silence when played back means it worked; a tiny or all-zero file means
- * it didn't.
+ *
+ * CONFIRMED (2026-09-10): on the real test device, AudioRecord.Builder().build() throws
+ * "UnsupportedOperationException: Error: could not register audio policy" when matching
+ * USAGE_VOICE_COMMUNICATION, even with a valid MediaProjection and an active, bound
+ * accessibility service present. Whether this is specific to USAGE_VOICE_COMMUNICATION or
+ * whether AudioPlaybackCapture is unavailable entirely on this ROM is still unknown -- see the
+ * EXTRA_TEST_USAGE_MEDIA self-test mode below, which swaps in USAGE_MEDIA to isolate that
+ * question without touching WeChat at all.
  *
  * Started/stopped by WeChatCallNotificationListenerService when it detects a WeChat call
  * starting/ending. Requires WeChatCallAudioCaptureHolder.mediaProjection to already be set,
@@ -58,6 +61,15 @@ class WeChatCallCaptureService : Service() {
         private const val SAMPLE_RATE = 16000
         private const val CHANNEL_CONFIG_IN = AudioFormat.CHANNEL_IN_MONO
         private const val AUDIO_FORMAT = AudioFormat.ENCODING_PCM_16BIT
+
+        // When true, matches USAGE_MEDIA instead of USAGE_VOICE_COMMUNICATION and auto-stops
+        // after TEST_DURATION_MS. This is a standalone self-test, unrelated to WeChat, meant to
+        // answer one narrow question: does AudioPlaybackCaptureConfiguration work AT ALL on this
+        // device for a usage that third-party apps are normally allowed to capture? If this
+        // still produces remoteBytes=0 (or the same exception), the whole mechanism is broken on
+        // this ROM, not just the voice-communication usage specifically.
+        const val EXTRA_TEST_USAGE_MEDIA = "test_usage_media"
+        private const val TEST_DURATION_MS = 15_000L
     }
 
     private var micRecord: AudioRecord? = null
@@ -67,12 +79,19 @@ class WeChatCallCaptureService : Service() {
     private var remoteThread: Thread? = null
     private var micBytesWritten = 0L
     private var remoteBytesWritten = 0L
+    private var testMode = false
 
     override fun onBind(intent: Intent?): IBinder? = null
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+        testMode = intent?.getBooleanExtra(EXTRA_TEST_USAGE_MEDIA, false) == true
         startForeground(NOTIFICATION_ID, buildNotification())
         startCapture()
+
+        if (testMode) {
+            Handler(Looper.getMainLooper()).postDelayed({ stopSelf() }, TEST_DURATION_MS)
+        }
+
         return START_NOT_STICKY
     }
 
@@ -128,9 +147,10 @@ class WeChatCallCaptureService : Service() {
         }
         mic.startRecording()
 
-        // Remote side: whatever WeChat plays out loud, via playback capture. Only attempted on
+        // Remote side: whatever is playing out loud, via playback capture. Only attempted on
         // API 29+ (AudioPlaybackCaptureConfiguration doesn't exist below that); this project's
         // minSdk is 28, so this whole block is runtime-guarded rather than assumed available.
+        var remoteReady = false
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
             val projection = WeChatCallAudioCaptureHolder.mediaProjection
             if (projection == null) {
@@ -141,8 +161,13 @@ class WeChatCallCaptureService : Service() {
                 )
             } else {
                 try {
+                    val usage = if (testMode) {
+                        AudioAttributes.USAGE_MEDIA
+                    } else {
+                        AudioAttributes.USAGE_VOICE_COMMUNICATION
+                    }
                     val captureConfig = AudioPlaybackCaptureConfiguration.Builder(projection)
-                        .addMatchingUsage(AudioAttributes.USAGE_VOICE_COMMUNICATION)
+                        .addMatchingUsage(usage)
                         .build()
                     val format = AudioFormat.Builder()
                         .setEncoding(AUDIO_FORMAT)
@@ -161,6 +186,7 @@ class WeChatCallCaptureService : Service() {
                         recordLoop(remote, remoteFile) { remoteBytesWritten += it }
                     }
                     remote.startRecording()
+                    remoteReady = true
                 } catch (e: Exception) {
                     Log.e(TAG, "Failed to start playback capture", e)
                 }
@@ -169,7 +195,12 @@ class WeChatCallCaptureService : Service() {
             Log.w(TAG, "SDK ${Build.VERSION.SDK_INT} < 29, playback capture unavailable")
         }
 
-        Log.i(TAG, "Capture started, writing to ${outputDir()}")
+        // Explicit, unambiguous status lines -- a single "Capture started" line here previously
+        // printed even when the remote side had already failed above, which was misleading.
+        Log.i(TAG, "Mode: ${if (testMode) "SELF-TEST (USAGE_MEDIA)" else "WECHAT_CALL (USAGE_VOICE_COMMUNICATION)"}")
+        Log.i(TAG, "Mic capture: OK")
+        Log.i(TAG, if (remoteReady) "Playback capture: OK" else "Playback capture: FAILED")
+        Log.i(TAG, "Output dir: ${outputDir()}")
     }
 
     private fun recordLoop(record: AudioRecord, file: File, onBytes: (Int) -> Unit) {
@@ -208,7 +239,8 @@ class WeChatCallCaptureService : Service() {
 
         Log.i(
             TAG,
-            "Capture stopped: micBytes=$micBytesWritten remoteBytes=$remoteBytesWritten " +
+            "Capture stopped (mode=${if (testMode) "SELF-TEST" else "WECHAT_CALL"}): " +
+                "micBytes=$micBytesWritten remoteBytes=$remoteBytesWritten " +
                 "(non-zero remoteBytes containing real audio, not just silence, means it worked)",
         )
 
