@@ -9,9 +9,11 @@ import android.app.Notification
 import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.app.Service
+import android.content.Context
 import android.content.Intent
 import android.media.AudioAttributes
 import android.media.AudioFormat
+import android.media.AudioManager
 import android.media.AudioPlaybackCaptureConfiguration
 import android.media.AudioRecord
 import android.media.MediaRecorder
@@ -26,31 +28,29 @@ import java.util.concurrent.atomic.AtomicBoolean
 import kotlin.concurrent.thread
 
 /**
- * Diagnostic-only foreground service. For the duration of a single detected WeChat call, it
- * records two RAW (headerless) PCM streams to separate files under
- * getExternalFilesDir(null)/wechat_call_test/:
+ * For the duration of a single detected WeChat call, this records the microphone to
+ * mic_<timestamp>.pcm under getExternalFilesDir(null)/wechat_call_test/ (RAW, headerless PCM).
  *
- *  - mic_<timestamp>.pcm: this device's own microphone, via
- *    MediaRecorder.AudioSource.VOICE_COMMUNICATION (includes echo cancellation).
- *  - remote_<timestamp>.pcm: whatever WeChat is playing out loud, via
- *    AudioPlaybackCaptureConfiguration matching AudioAttributes.USAGE_VOICE_COMMUNICATION --
- *    the usage WeChat's call audio was confirmed to use earlier via `dumpsys audio`.
+ * CONFIRMED (2026-09-10/11, two separate real-call tests, once with the accessibility service
+ * enabled and once disabled -- both produced the exact same result): capturing
+ * USAGE_VOICE_COMMUNICATION via AudioPlaybackCaptureConfiguration is rejected at the OS audio
+ * policy layer on this device ("UnsupportedOperationException: Error: could not register audio
+ * policy" from AudioRecord.Builder().build()), regardless of accessibility-service state. A
+ * parallel self-test using USAGE_MEDIA instead succeeds cleanly, so this is specific to the
+ * voice-communication usage on this ROM, not a general AudioPlaybackCapture failure -- see
+ * EXTRA_TEST_USAGE_MEDIA below, which is kept around for re-testing on other devices/ROMs where
+ * this may behave differently.
  *
- * This does NOT mix, encode, resample, or otherwise post-process anything. The sole purpose
- * right now is to find out whether remote_*.pcm actually contains real audio data at all.
- *
- * CONFIRMED (2026-09-10): on the real test device, AudioRecord.Builder().build() throws
- * "UnsupportedOperationException: Error: could not register audio policy" when matching
- * USAGE_VOICE_COMMUNICATION, even with a valid MediaProjection and an active, bound
- * accessibility service present. Whether this is specific to USAGE_VOICE_COMMUNICATION or
- * whether AudioPlaybackCapture is unavailable entirely on this ROM is still unknown -- see the
- * EXTRA_TEST_USAGE_MEDIA self-test mode below, which swaps in USAGE_MEDIA to isolate that
- * question without touching WeChat at all.
+ * Given that dead end, real WeChat calls (testMode == false) now fall back to the low-tech
+ * approach: force the speakerphone on for the duration of the call, and record with a plain
+ * MediaRecorder.AudioSource.MIC (NOT VOICE_COMMUNICATION -- that source applies echo
+ * cancellation, which would filter out most of the speakerphone audio it's specifically meant to
+ * pick up here, defeating the point). This means a single mixed-in-the-room recording of both
+ * sides, at whatever quality the speaker + mic roundtrip gives -- a real step down from a clean
+ * two-track digital capture, but the only thing left that actually works on this device.
  *
  * Started/stopped by WeChatCallNotificationListenerService when it detects a WeChat call
- * starting/ending. Requires WeChatCallAudioCaptureHolder.mediaProjection to already be set,
- * which is obtained once via WeChatCallGrantActivity (a one-time manual step, same idea as
- * granting accessibility/notification access).
+ * starting/ending.
  */
 class WeChatCallCaptureService : Service() {
     companion object {
@@ -80,6 +80,7 @@ class WeChatCallCaptureService : Service() {
     private var micBytesWritten = 0L
     private var remoteBytesWritten = 0L
     private var testMode = false
+    private var previousSpeakerphoneOn: Boolean? = null
 
     override fun onBind(intent: Intent?): IBinder? = null
 
@@ -131,9 +132,23 @@ class WeChatCallCaptureService : Service() {
             .getMinBufferSize(SAMPLE_RATE, CHANNEL_CONFIG_IN, AUDIO_FORMAT)
             .coerceAtLeast(4096)
 
-        // Mic side: your own voice, with echo cancellation applied by VOICE_COMMUNICATION source.
+        // For real WeChat calls, force speakerphone on so the mic can actually pick up the
+        // other side (see class doc for why VOICE_COMMUNICATION's echo cancellation would
+        // otherwise filter that right back out). Not done in test mode, which has nothing to
+        // do with phone calls.
+        if (!testMode) {
+            val audioManager = getSystemService(Context.AUDIO_SERVICE) as AudioManager
+            previousSpeakerphoneOn = audioManager.isSpeakerphoneOn
+            @Suppress("DEPRECATION")
+            audioManager.isSpeakerphoneOn = true
+        }
+
+        // Plain MIC source (not VOICE_COMMUNICATION): for real calls, that source's built-in
+        // echo cancellation would suppress most of the speakerphone audio this is meant to
+        // pick up in the first place. For the USAGE_MEDIA self-test, it doesn't matter either
+        // way, so the same source is used for consistency.
         val mic = AudioRecord(
-            MediaRecorder.AudioSource.VOICE_COMMUNICATION,
+            MediaRecorder.AudioSource.MIC,
             SAMPLE_RATE,
             CHANNEL_CONFIG_IN,
             AUDIO_FORMAT,
@@ -147,11 +162,19 @@ class WeChatCallCaptureService : Service() {
         }
         mic.startRecording()
 
-        // Remote side: whatever is playing out loud, via playback capture. Only attempted on
-        // API 29+ (AudioPlaybackCaptureConfiguration doesn't exist below that); this project's
-        // minSdk is 28, so this whole block is runtime-guarded rather than assumed available.
+        // Remote side: whatever is playing out loud, via playback capture. Only attempted in
+        // self-test mode -- confirmed dead end for real WeChat calls (see class doc), so real
+        // calls skip straight to relying on the speakerphone + mic above instead of repeating a
+        // capture attempt that's already known to fail every time.
         var remoteReady = false
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+        if (!testMode) {
+            Log.i(
+                TAG,
+                "Playback capture skipped for real calls: USAGE_VOICE_COMMUNICATION confirmed " +
+                    "unsupported on this device (see CUSTOM_CHANGES.md). Relying on " +
+                    "speakerphone + mic instead.",
+            )
+        } else if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
             val projection = WeChatCallAudioCaptureHolder.mediaProjection
             if (projection == null) {
                 Log.w(
@@ -197,7 +220,10 @@ class WeChatCallCaptureService : Service() {
 
         // Explicit, unambiguous status lines -- a single "Capture started" line here previously
         // printed even when the remote side had already failed above, which was misleading.
-        Log.i(TAG, "Mode: ${if (testMode) "SELF-TEST (USAGE_MEDIA)" else "WECHAT_CALL (USAGE_VOICE_COMMUNICATION)"}")
+        Log.i(
+            TAG,
+            "Mode: ${if (testMode) "SELF-TEST (USAGE_MEDIA)" else "WECHAT_CALL (speakerphone + MIC)"}",
+        )
         Log.i(TAG, "Mic capture: OK")
         Log.i(TAG, if (remoteReady) "Playback capture: OK" else "Playback capture: FAILED")
         Log.i(TAG, "Output dir: ${outputDir()}")
@@ -236,6 +262,13 @@ class WeChatCallCaptureService : Service() {
         }
         micRecord = null
         remoteRecord = null
+
+        previousSpeakerphoneOn?.let { wasOn ->
+            val audioManager = getSystemService(Context.AUDIO_SERVICE) as AudioManager
+            @Suppress("DEPRECATION")
+            audioManager.isSpeakerphoneOn = wasOn
+        }
+        previousSpeakerphoneOn = null
 
         Log.i(
             TAG,
