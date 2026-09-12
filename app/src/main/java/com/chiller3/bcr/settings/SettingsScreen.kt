@@ -351,6 +351,7 @@ private fun SettingsContent(
 ) {
     var showMinDurationDialog by rememberSaveable { mutableStateOf(false) }
     var showFloatingButtonHelp by rememberSaveable { mutableStateOf(false) }
+    var showWechatAutoRecordHelp by rememberSaveable { mutableStateOf(false) }
     var showModInfoDialog by rememberSaveable { mutableStateOf(false) }
     val context = LocalContext.current
 
@@ -407,7 +408,26 @@ private fun SettingsContent(
                 checked = wechatAutoRecord,
                 onCheckedChange = onWechatAutoRecordChange,
                 shapes = BetterSegmentedShapes.middle(),
-                title = { Text(text = stringResource(R.string.pref_wechat_auto_record_name)) },
+                title = {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text(text = stringResource(R.string.pref_wechat_auto_record_name))
+                        val helpDescription = stringResource(
+                            R.string.pref_wechat_auto_record_help_content_description,
+                        )
+                        IconButton(
+                            onClick = { showWechatAutoRecordHelp = true },
+                            modifier = Modifier
+                                .size(32.dp)
+                                .clearAndSetSemantics { contentDescription = helpDescription },
+                        ) {
+                            Text(
+                                text = "\u24D8", // ⓘ
+                                color = MaterialTheme.colorScheme.primary,
+                                style = MaterialTheme.typography.titleMedium,
+                            )
+                        }
+                    }
+                },
                 summary = { Text(text = stringResource(R.string.pref_wechat_auto_record_desc)) },
                 modifier = Modifier.animateItem(),
             )
@@ -640,6 +660,26 @@ private fun SettingsContent(
             onDismissRequest = { showFloatingButtonHelp = false },
             confirmButton = {
                 TextButton(onClick = { showFloatingButtonHelp = false }) {
+                    Text(text = stringResource(android.R.string.ok))
+                }
+            },
+        )
+    }
+
+    if (showWechatAutoRecordHelp) {
+        AlertDialog(
+            title = { Text(text = stringResource(R.string.pref_wechat_auto_record_help_title)) },
+            text = {
+                Text(
+                    text = stringResource(R.string.pref_wechat_auto_record_help_body),
+                    modifier = Modifier
+                        .verticalScroll(state = rememberScrollState())
+                        .padding(top = 8.dp),
+                )
+            },
+            onDismissRequest = { showWechatAutoRecordHelp = false },
+            confirmButton = {
+                TextButton(onClick = { showWechatAutoRecordHelp = false }) {
                     Text(text = stringResource(android.R.string.ok))
                 }
             },
