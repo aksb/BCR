@@ -39,16 +39,22 @@ import android.util.Log
  *    tones, which are also tagged USAGE_VOICE_COMMUNICATION) -- not clean enough to use as a
  *    reliable trigger without yet more debounce logic of uncertain benefit. Abandoned.
  *
- * Given both automatic approaches hit a wall, recording is now fully manual: this class only
+ * Given both automatic approaches hit a wall, recording defaults to fully manual: this class
  * shows/hides the floating bubble in step with WeChat's call notification, and the user taps it
  * themselves whenever they're ready (confirmed near-instant: ~50ms from tap to AudioRecord
- * actually starting, so no equivalent "missing first few seconds" problem here). The one thing
- * that stays automatic is STOPPING: when the call notification disappears (for any reason -- the
- * user hanging up, the other side hanging up, switching to answer an incoming cellular call, an
- * error, etc.), any in-progress WeChat recording is stopped automatically, since reacting a
- * little late to an ending call only means a few extra seconds of harmless trailing silence, not
- * missing content -- unlike the START side, which is why that part alone doesn't get the same
- * "just let the user do it" treatment.
+ * actually starting, so no equivalent "missing first few seconds" problem here). Users who'd
+ * rather trade that occasional missing-audio risk for not having to remember to tap can opt into
+ * Preferences.wechatAutoRecord instead, which starts recording automatically the moment a call is
+ * detected (the bubble still shows, already in its "recording" appearance, purely so there's a
+ * visible confirmation that it's happening -- tapping it while in this mode still works, and
+ * just stops the recording early).
+ *
+ * The one thing that stays automatic regardless of that setting is STOPPING: when the call
+ * notification disappears (for any reason -- the user hanging up, the other side hanging up,
+ * switching to answer an incoming cellular call, an error, etc.), any in-progress WeChat
+ * recording is stopped automatically, since reacting a little late to an ending call only means a
+ * few extra seconds of harmless trailing silence, not missing content -- unlike the START side,
+ * which is why that part alone gets the manual-by-default treatment above.
  */
 class WeChatCallNotificationListenerService : NotificationListenerService() {
     companion object {
@@ -108,8 +114,17 @@ class WeChatCallNotificationListenerService : NotificationListenerService() {
 
         activeCallKey = sbn.key
         Log.i(TAG, "WeChat call started: text=[$text] key=${sbn.key}")
-        FloatingButtonService.show(this, FloatingBubbleUi.BubbleState.NOT_RECORDING) {
-            toggleRecordingFromBubble()
+
+        if (Preferences(this).wechatAutoRecord) {
+            isRecording = true
+            startForegroundService(Intent(this, WeChatCallCaptureService::class.java))
+            FloatingButtonService.show(this, FloatingBubbleUi.BubbleState.RECORDING) {
+                toggleRecordingFromBubble()
+            }
+        } else {
+            FloatingButtonService.show(this, FloatingBubbleUi.BubbleState.NOT_RECORDING) {
+                toggleRecordingFromBubble()
+            }
         }
     }
 

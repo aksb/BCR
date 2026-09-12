@@ -93,6 +93,7 @@ fun SettingsScreen(viewModel: SettingsViewModel = viewModel()) {
     val notificationOpenDir = remember(reloadPrefs) { prefs.notificationOpenDir }
     val showLauncherIcon = remember(reloadPrefs) { prefs.showLauncherIcon }
     val floatingButtonEnabled = remember(reloadPrefs) { prefs.floatingButtonEnabled }
+    val wechatAutoRecord = remember(reloadPrefs) { prefs.wechatAutoRecord }
     val isDebugMode = remember(reloadPrefs) { prefs.isDebugMode }
     val forceDirectBoot = remember(reloadPrefs) { prefs.forceDirectBoot }
 
@@ -197,6 +198,7 @@ fun SettingsScreen(viewModel: SettingsViewModel = viewModel()) {
             notificationOpenDir = notificationOpenDir,
             showLauncherIcon = showLauncherIcon,
             floatingButtonEnabled = floatingButtonEnabled,
+            wechatAutoRecord = wechatAutoRecord,
             isDebugMode = isDebugMode,
             forceDirectBoot = forceDirectBoot,
             onCallRecordingChange = { enabled ->
@@ -264,6 +266,10 @@ fun SettingsScreen(viewModel: SettingsViewModel = viewModel()) {
                     )
                 }
             },
+            onWechatAutoRecordChange = { enabled ->
+                prefs.wechatAutoRecord = enabled
+                reloadPrefs++
+            },
             onBackupSettings = {
                 requestSafBackup.launch("bcr_settings_backup.json")
             },
@@ -318,6 +324,7 @@ private fun SettingsContent(
     notificationOpenDir: Boolean,
     showLauncherIcon: Boolean,
     floatingButtonEnabled: Boolean,
+    wechatAutoRecord: Boolean,
     isDebugMode: Boolean,
     forceDirectBoot: Boolean,
     onCallRecordingChange: (Boolean) -> Unit,
@@ -332,6 +339,7 @@ private fun SettingsContent(
     onNotificationOpenDirChange: (Boolean) -> Unit,
     onShowLauncherIconChange: (Boolean) -> Unit,
     onFloatingButtonChange: (Boolean) -> Unit,
+    onWechatAutoRecordChange: (Boolean) -> Unit,
     onBackupSettings: () -> Unit,
     onRestoreSettings: () -> Unit,
     onDebugModeChange: (Boolean) -> Unit,
@@ -390,6 +398,17 @@ private fun SettingsContent(
                     }
                 },
                 summary = { Text(text = stringResource(R.string.pref_floating_button_desc)) },
+                modifier = Modifier.animateItem(),
+            )
+        }
+
+        item(key = "wechat_auto_record") {
+            SwitchPreference(
+                checked = wechatAutoRecord,
+                onCheckedChange = onWechatAutoRecordChange,
+                shapes = BetterSegmentedShapes.middle(),
+                title = { Text(text = stringResource(R.string.pref_wechat_auto_record_name)) },
+                summary = { Text(text = stringResource(R.string.pref_wechat_auto_record_desc)) },
                 modifier = Modifier.animateItem(),
             )
         }
@@ -773,6 +792,7 @@ private fun PreviewSettingsScreen() {
                 notificationOpenDir = false,
                 showLauncherIcon = true,
                 floatingButtonEnabled = false,
+                wechatAutoRecord = false,
                 isDebugMode = true,
                 forceDirectBoot = false,
                 onCallRecordingChange = {},
@@ -787,6 +807,7 @@ private fun PreviewSettingsScreen() {
                 onNotificationOpenDirChange = {},
                 onShowLauncherIconChange = {},
                 onFloatingButtonChange = {},
+                onWechatAutoRecordChange = {},
                 onBackupSettings = {},
                 onRestoreSettings = {},
                 onDebugModeChange = {},

@@ -5,5 +5,4 @@
 -->
 <resources>
     <string name="app_name" translatable="false">BCR</string>
-    <string name="wechat_call_grant_label" translatable="false">BCR 微信录音测试</string>
 </resources>

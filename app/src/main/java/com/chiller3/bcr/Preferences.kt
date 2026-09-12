@@ -57,6 +57,7 @@ class Preferences(initialContext: Context) {
         private const val PREF_FLOATING_BUTTON = "floating_button_enabled"
         private const val PREF_FLOATING_BUTTON_POS_X = "floating_button_pos_x_fraction"
         private const val PREF_FLOATING_BUTTON_POS_Y = "floating_button_pos_y_fraction"
+        private const val PREF_WECHAT_AUTO_RECORD = "wechat_auto_record"
 
         // Legacy preferences.
         private const val PREF_FORMAT_STEREO = "stereo"
@@ -424,6 +425,17 @@ class Preferences(initialContext: Context) {
     var floatingButtonEnabled: Boolean
         get() = prefs.getBoolean(PREF_FLOATING_BUTTON, false)
         set(enabled) = prefs.edit { putBoolean(PREF_FLOATING_BUTTON, enabled) }
+
+    /**
+     * Whether to automatically start recording as soon as a WeChat call is detected, instead of
+     * requiring the user to tap the floating bubble themselves. Defaults to off (manual) because
+     * automatic start can miss the first few seconds of a call -- see
+     * WeChatCallNotificationListenerService's class doc for why. Stopping is always automatic
+     * either way, regardless of this setting.
+     */
+    var wechatAutoRecord: Boolean
+        get() = prefs.getBoolean(PREF_WECHAT_AUTO_RECORD, false)
+        set(enabled) = prefs.edit { putBoolean(PREF_WECHAT_AUTO_RECORD, enabled) }
 
     /**
      * The floating button's last user-dragged position, as a fraction (0f..1f) of the screen
