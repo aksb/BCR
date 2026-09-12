@@ -7,83 +7,87 @@ package com.chiller3.bcr
 
 import android.app.Notification
 import android.content.Intent
-import android.media.AudioAttributes
-import android.media.AudioManager
-import android.media.AudioPlaybackConfiguration
 import android.os.Handler
 import android.os.Looper
 import android.service.notification.NotificationListenerService
 import android.service.notification.StatusBarNotification
 import android.util.Log
-import android.widget.Toast
 
 /**
  * Detects the start/end of a WeChat (com.tencent.mm) voice or video call by watching for its
- * ongoing in-call notification.
+ * ongoing in-call notification, and shows/hides the shared floating bubble (see
+ * [FloatingButtonService]) accordingly.
  *
  * Confirmed by real-device testing (2026-09-10): WeChat posts an ongoing notification only once
  * a call is actually connected (nothing during ringing), with text "语音通话中" for voice calls
- * (video calls are expected to say "视频通话中", not yet directly observed). When the call ends,
- * WeChat cancels that same notification itself (reason=REASON_APP_CANCEL).
+ * and "视频通话中" for video calls. When the call ends, WeChat cancels that same notification
+ * itself (reason=REASON_APP_CANCEL).
  *
- * DIAGNOSTIC ADDITION (2026-09-11): real recordings consistently start about 10 seconds late and
- * are missing the first ~10 seconds of audio, even though this class's own detection fires
- * essentially instantly relative to whenever the matched notification actually posts (confirmed:
- * 47ms from notification to AudioRecord actually starting). Real-call testing with the extra
- * "ALL: POSTED"/"ALL: REMOVED" logging below found NO earlier intermediate notification state --
- * WeChat posts exactly one notification, already saying "语音通话中", and the gap between it
- * appearing and the notification disappearing lines up exactly with the recorded file's
- * duration. So the missing seconds are specifically the gap between the user actually being
- * connected and WeChat getting around to posting/updating that notification -- entirely on
- * WeChat's side, not fixable by reacting faster to the notification itself.
+ * DESIGN DECISION (2026-09-11/12): two earlier attempts to auto-START recording as soon as this
+ * notification appears were both abandoned after real-call testing:
  *
- * registerPlaybackObserver() below is a second, independent, PARALLEL signal source that doesn't
- * replace the notification-based detection above (nothing here triggers WeChatCallCaptureService
- * yet) -- it only logs, with a precise timestamp, whenever the system reports a
- * USAGE_VOICE_COMMUNICATION playback stream becoming active/inactive anywhere on the device, via
- * the public AudioManager.AudioPlaybackCallback API (no special permission needed -- this is
- * just a status callback, not audio capture, so it isn't affected by the
- * USAGE_VOICE_COMMUNICATION capture restriction confirmed elsewhere in this project). The idea is
- * to compare its timestamp against the notification-based one on the same real call: if it fires
- * meaningfully earlier, it's a better trigger signal and detection can switch over to it; if not,
- * this dead-ends the same way AudioPlaybackCaptureConfiguration did.
+ *  - This class's own detection reacts to the notification in under 50ms, so it isn't the
+ *    bottleneck. But real calls repeatedly came out missing their first several seconds of
+ *    audio regardless -- the gap is specifically between the user actually being connected and
+ *    WeChat getting around to posting/updating this notification, which is entirely on WeChat's
+ *    side and not something reacting faster to the notification can fix.
+ *  - A parallel attempt using the public, no-permission-required
+ *    AudioManager.registerAudioPlaybackCallback API (to catch a USAGE_VOICE_COMMUNICATION
+ *    playback stream becoming active, independent of WeChat's own notification) was tested too.
+ *    Real-call logging showed this signal flickering true/false multiple times *before* the
+ *    call was actually connected per WeChat's own notification (likely picking up ringback/dial
+ *    tones, which are also tagged USAGE_VOICE_COMMUNICATION) -- not clean enough to use as a
+ *    reliable trigger without yet more debounce logic of uncertain benefit. Abandoned.
+ *
+ * Given both automatic approaches hit a wall, recording is now fully manual: this class only
+ * shows/hides the floating bubble in step with WeChat's call notification, and the user taps it
+ * themselves whenever they're ready (confirmed near-instant: ~50ms from tap to AudioRecord
+ * actually starting, so no equivalent "missing first few seconds" problem here). The one thing
+ * that stays automatic is STOPPING: when the call notification disappears (for any reason -- the
+ * user hanging up, the other side hanging up, switching to answer an incoming cellular call, an
+ * error, etc.), any in-progress WeChat recording is stopped automatically, since reacting a
+ * little late to an ending call only means a few extra seconds of harmless trailing silence, not
+ * missing content -- unlike the START side, which is why that part alone doesn't get the same
+ * "just let the user do it" treatment.
  */
 class WeChatCallNotificationListenerService : NotificationListenerService() {
     companion object {
         private val TAG = WeChatCallNotificationListenerService::class.java.simpleName
         private const val WECHAT_PACKAGE = "com.tencent.mm"
 
-        // Text observed on WeChat's ongoing in-call notification. Video calls are expected to
-        // use a similar but distinct string; both are matched by substring so small wording
-        // variations across WeChat versions don't break detection outright.
+        // Text observed on WeChat's ongoing in-call notification. Both voice and video calls
+        // confirmed by real-device testing (2026-09-11).
         private val CALL_TEXT_KEYWORDS = listOf("语音通话中", "视频通话中")
+
+        private var instance: WeChatCallNotificationListenerService? = null
+
+        /** Called when the shared floating bubble is tapped while showing for a WeChat call. */
+        fun toggleRecordingFromBubble() {
+            val service = instance ?: return
+            service.handler.post {
+                service.toggleRecording()
+            }
+        }
     }
+
+    private val handler = Handler(Looper.getMainLooper())
 
     // The StatusBarNotification.key of the currently active call notification, or null if no
     // call is currently detected as in progress. Using the key (rather than id/tag) is the
     // correct way to match a POSTED notification to its later REMOVED event, since it's
     // guaranteed unique per notification instance by the system.
     private var activeCallKey: String? = null
-    private var callStartedAtMs: Long = 0
-    private var playbackCallback: AudioManager.AudioPlaybackCallback? = null
+    private var isRecording = false
 
     override fun onListenerConnected() {
         super.onListenerConnected()
+        instance = this
         Log.d(TAG, "Notification listener connected")
-        registerPlaybackObserver()
     }
 
     override fun onNotificationPosted(sbn: StatusBarNotification?) {
         sbn ?: return
-        if (sbn.packageName != WECHAT_PACKAGE) {
-            return
-        }
-
-        // Unconditional diagnostic log -- see class doc. Runs regardless of whether this
-        // notification matches our detection keywords, unlike everything below it.
-        Log.d(TAG, "ALL: POSTED ${describe(sbn)}")
-
-        if (!sbn.isOngoing) {
+        if (sbn.packageName != WECHAT_PACKAGE || !sbn.isOngoing) {
             return
         }
 
@@ -103,10 +107,10 @@ class WeChatCallNotificationListenerService : NotificationListenerService() {
         }
 
         activeCallKey = sbn.key
-        callStartedAtMs = System.currentTimeMillis()
         Log.i(TAG, "WeChat call started: text=[$text] key=${sbn.key}")
-        showToast("检测到微信通话开始")
-        startForegroundService(Intent(this, WeChatCallCaptureService::class.java))
+        FloatingButtonService.show(this, FloatingBubbleUi.BubbleState.NOT_RECORDING) {
+            toggleRecordingFromBubble()
+        }
     }
 
     override fun onNotificationRemoved(
@@ -115,77 +119,47 @@ class WeChatCallNotificationListenerService : NotificationListenerService() {
         reason: Int,
     ) {
         sbn ?: return
-        if (sbn.packageName == WECHAT_PACKAGE) {
-            Log.d(TAG, "ALL: REMOVED (reason=$reason) ${describe(sbn)}")
-        }
-
         if (sbn.key != activeCallKey) {
             return
         }
 
-        val durationSec = (System.currentTimeMillis() - callStartedAtMs) / 1000
-        Log.i(TAG, "WeChat call ended: durationSec=$durationSec reason=$reason")
-        showToast("检测到微信通话结束，时长约 ${durationSec}s")
-        stopService(Intent(this, WeChatCallCaptureService::class.java))
+        Log.i(TAG, "WeChat call ended: reason=$reason isRecording=$isRecording")
+        FloatingButtonService.hide(this)
+
+        if (isRecording) {
+            stopService(Intent(this, WeChatCallCaptureService::class.java))
+            isRecording = false
+        }
+
         activeCallKey = null
     }
 
-    private fun describe(sbn: StatusBarNotification): String {
-        val extras = sbn.notification.extras
-        val title = extras.getCharSequence(Notification.EXTRA_TITLE)
-        val text = extras.getCharSequence(Notification.EXTRA_TEXT)
-        val subText = extras.getCharSequence(Notification.EXTRA_SUB_TEXT)
-        val ticker = sbn.notification.tickerText
-        return "key=${sbn.key} ongoing=${sbn.isOngoing} category=${sbn.notification.category} " +
-            "postTimeMs=${sbn.postTime} title=[$title] text=[$text] subText=[$subText] " +
-            "ticker=[$ticker]"
-    }
-
-    private fun showToast(message: String) {
-        Handler(Looper.getMainLooper()).post {
-            Toast.makeText(applicationContext, message, Toast.LENGTH_LONG).show()
+    private fun toggleRecording() {
+        if (activeCallKey == null) {
+            // Call already ended (e.g. tap raced with hangup); nothing to toggle.
+            return
         }
-    }
 
-    /**
-     * See class doc. Purely observational -- logs a precise timestamp whenever a
-     * USAGE_VOICE_COMMUNICATION playback stream anywhere on the device becomes active/inactive.
-     * Does not trigger recording; that's still driven entirely by the notification-based
-     * detection above, until/unless this proves to be a meaningfully earlier signal.
-     */
-    private fun registerPlaybackObserver() {
-        val audioManager = getSystemService(AudioManager::class.java) ?: return
-        val callback = object : AudioManager.AudioPlaybackCallback() {
-            override fun onPlaybackConfigChanged(configs: MutableList<AudioPlaybackConfiguration>?) {
-                // AudioPlaybackConfiguration.isActive() is a hidden/@SystemApi method, not part
-                // of the public SDK, so it can't be called here. Instead: this callback re-sends
-                // the FULL list of currently active playback configs every time it changes, so
-                // whether a USAGE_VOICE_COMMUNICATION entry is present in THIS list already
-                // tells us whether one is active right now -- no separate active flag needed.
-                val hasVoiceCommunication = configs?.any {
-                    it.audioAttributes.usage == AudioAttributes.USAGE_VOICE_COMMUNICATION
-                } == true
-                Log.d(
-                    TAG,
-                    "PLAYBACK_CB: configsCount=${configs?.size} " +
-                        "hasVoiceCommunication=$hasVoiceCommunication",
-                )
-            }
+        isRecording = !isRecording
+        if (isRecording) {
+            startForegroundService(Intent(this, WeChatCallCaptureService::class.java))
+        } else {
+            stopService(Intent(this, WeChatCallCaptureService::class.java))
         }
-        audioManager.registerAudioPlaybackCallback(callback, Handler(Looper.getMainLooper()))
-        playbackCallback = callback
-    }
 
-    private fun unregisterPlaybackObserver() {
-        playbackCallback?.let {
-            val audioManager = getSystemService(AudioManager::class.java)
-            audioManager?.unregisterAudioPlaybackCallback(it)
-        }
-        playbackCallback = null
+        FloatingButtonService.setBubbleState(
+            if (isRecording) {
+                FloatingBubbleUi.BubbleState.RECORDING
+            } else {
+                FloatingBubbleUi.BubbleState.NOT_RECORDING
+            },
+        )
     }
 
     override fun onListenerDisconnected() {
-        unregisterPlaybackObserver()
+        if (instance === this) {
+            instance = null
+        }
         super.onListenerDisconnected()
         Log.d(TAG, "Notification listener disconnected")
     }

@@ -19,8 +19,11 @@ import android.widget.LinearLayout
 
 /**
  * Displays a small draggable bubble ("floating button") over other apps, including on top of a
- * secure lock screen, while a call is in progress. Tapping it (without dragging) toggles manual
- * recording of the current call via [RecorderInCallService].
+ * secure lock screen, while a call is in progress. Tapping it (without dragging) runs whatever
+ * [onTap] callback the caller supplied to [show] -- e.g. [RecorderInCallService] toggles real
+ * call recording, [WeChatCallNotificationListenerService] toggles WeChat call recording. This is
+ * a single shared overlay; whichever caller shows it first owns its tap behavior until it's
+ * hidden again.
  *
  * This is a single plain overlay window ([WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY])
  * that works in all three situations: device unlocked, insecure/swipe lock screen, and secure
@@ -33,8 +36,8 @@ import android.widget.LinearLayout
  * or in-call UI) instead of being swallowed - so the rest of the screen (e.g. the answer/decline
  * buttons) stays fully usable while the bubble is showing.
  *
- * This service does nothing on its own besides manage the overlay view; all recording logic
- * lives in [RecorderInCallService], which starts/stops this service as calls come and go.
+ * This service does nothing on its own besides manage the overlay view and forward taps to
+ * whichever caller is currently using it; all actual recording logic lives elsewhere.
  */
 class FloatingButtonService : Service() {
     companion object {
@@ -62,11 +65,23 @@ class FloatingButtonService : Service() {
         private var pendingInitialState = FloatingBubbleUi.BubbleState.NOT_RECORDING
 
         /**
+         * The tap handler to wire up as soon as the bubble is created. Stashed here for the same
+         * reason as [pendingInitialState] above -- see its doc comment.
+         */
+        private var pendingOnTap: () -> Unit = {}
+
+        /**
          * Show the floating button with the given initial appearance, if the overlay permission is
          * granted. Safe to call multiple times; if the bubble is already showing, this just
-         * updates its appearance instead (equivalent to [setBubbleState]).
+         * updates its appearance instead (equivalent to [setBubbleState]) -- note that in that case
+         * [onTap] is NOT updated, since the bubble is a single shared overlay and the caller that
+         * showed it first is assumed to still own it.
+         *
+         * @param onTap Called when the bubble is tapped (not dragged). Different callers wire up
+         * different behavior here -- e.g. [RecorderInCallService] toggles real call recording,
+         * while [WeChatCallNotificationListenerService] toggles WeChat call recording.
          */
-        fun show(context: Context, initialState: FloatingBubbleUi.BubbleState) {
+        fun show(context: Context, initialState: FloatingBubbleUi.BubbleState, onTap: () -> Unit) {
             if (instance != null) {
                 setBubbleState(initialState)
                 return
@@ -77,6 +92,7 @@ class FloatingButtonService : Service() {
             }
 
             pendingInitialState = initialState
+            pendingOnTap = onTap
             context.startService(Intent(context, FloatingButtonService::class.java))
         }
 
@@ -96,11 +112,13 @@ class FloatingButtonService : Service() {
     private lateinit var layoutParams: WindowManager.LayoutParams
 
     private var bubbleState = FloatingBubbleUi.BubbleState.NOT_RECORDING
+    private var onTap: () -> Unit = {}
 
     override fun onCreate() {
         super.onCreate()
         instance = this
         bubbleState = pendingInitialState
+        onTap = pendingOnTap
 
         windowManager = getSystemService(WINDOW_SERVICE) as WindowManager
         val prefs = Preferences(this)
@@ -170,7 +188,7 @@ class FloatingButtonService : Service() {
                 layoutParams.y = y
                 windowManager.updateViewLayout(bubbleView, layoutParams)
             },
-            onTap = { RecorderInCallService.toggleManualRecordingFromBubble() },
+            onTap = { onTap() },
             onDragEnd = { x, y ->
                 // Store as a fraction of the (clamped) draggable range rather than raw pixels, so
                 // it still lands in a sensible spot if this is next read back on a different

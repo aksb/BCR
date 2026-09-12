@@ -463,7 +463,9 @@ class RecorderInCallService : InCallService(), RecorderThread.OnRecordingComplet
         // updateFloatingButtonRecordingState() as a separate step afterwards - see the comment on
         // FloatingButtonService.pendingInitialState for why a separate call would silently fail to
         // apply on the bubble's first appearance for this call.
-        FloatingButtonService.show(this, currentBubbleState())
+        FloatingButtonService.show(this, currentBubbleState()) {
+            RecorderInCallService.toggleManualRecordingFromBubble()
+        }
     }
 
     /** Refresh the bubble to match [currentBubbleState]. */
