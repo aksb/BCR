@@ -20,7 +20,7 @@
     <string name="pref_output_dir_name">Output directory</string>
     <string name="pref_output_dir_desc">Pick a directory to store recordings. Long press to open in file manager.</string>
 
-    <string name="pref_output_format_name">Output format</string>
+    <string name="pref_output_format_name">Output format (excludes WeChat recordings)</string>
     <string name="pref_output_format_desc">Select an encoding format for the recordings.</string>
 
     <string name="pref_min_duration_name">Minimum recording duration</string>

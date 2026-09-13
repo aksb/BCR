@@ -21,6 +21,9 @@ import java.io.File
 import java.io.FileOutputStream
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
 import java.util.concurrent.atomic.AtomicBoolean
 import kotlin.concurrent.thread
 
@@ -64,6 +67,7 @@ class WeChatCallCaptureService : Service() {
     private var micThread: Thread? = null
     private var micBytesWritten = 0L
     private var micFile: File? = null
+    private var captureStartedAtMs: Long = 0
 
     override fun onBind(intent: Intent?): IBinder? = null
 
@@ -105,6 +109,7 @@ class WeChatCallCaptureService : Service() {
         micFile = null
 
         val timestamp = System.currentTimeMillis()
+        captureStartedAtMs = timestamp
         val bufferSize = AudioRecord
             .getMinBufferSize(SAMPLE_RATE, CHANNEL_CONFIG_IN, AUDIO_FORMAT)
             .coerceAtLeast(4096)
@@ -160,10 +165,19 @@ class WeChatCallCaptureService : Service() {
 
         val finalFile: DocumentFile? = if (micWav != null) {
             try {
+                // Human-readable display name, e.g. "WeChat_2026-09-12_14-30-05". Deliberately
+                // NOT including the ".wav" extension here: moveToOutputDir/createFile appends
+                // the correct extension itself based on the mimeType passed below, so including
+                // it here as well previously produced files literally named "....wav.wav".
+                val displayName = "WeChat_" + SimpleDateFormat(
+                    "yyyy-MM-dd_HH-mm-ss",
+                    Locale.US,
+                ).format(Date(captureStartedAtMs))
+
                 val dirUtils = OutputDirUtils(applicationContext, OutputDirUtils.NULL_REDACTOR)
                 dirUtils.moveToOutputDir(
                     DocumentFile.fromFile(micWav),
-                    listOf("WeChat", micWav.name),
+                    listOf("WeChat", displayName),
                     "audio/x-wav",
                 )
             } catch (e: Exception) {

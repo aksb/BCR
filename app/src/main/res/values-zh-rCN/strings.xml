@@ -20,7 +20,7 @@
     <string name="pref_output_dir_name">保存目录</string>
     <string name="pref_output_dir_desc">选择存储录音文件的目录。长按可在文件管理器中打开</string>
 
-    <string name="pref_output_format_name">保存格式</string>
+    <string name="pref_output_format_name">保存格式（不含微信录音）</string>
     <string name="pref_output_format_desc">选择录音的编码格式</string>
 
     <string name="pref_min_duration_name">最短录音时长</string>
