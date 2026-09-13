@@ -9,6 +9,7 @@ import android.app.Notification
 import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.app.Service
+import android.content.Context
 import android.content.Intent
 import android.media.AudioFormat
 import android.media.AudioRecord
@@ -47,9 +48,11 @@ import kotlin.concurrent.thread
  * the playback-capture attempt here) was removed rather than kept as unused weight.
  *
  * Started/stopped by WeChatCallNotificationListenerService: recording start is either fully
- * manual (the user taps the floating bubble) or automatic (if the user has enabled that in
- * settings), but stopping is always automatic, triggered by WeChat's call notification
- * disappearing.
+ * manual (the user taps the floating bubble), automatic on notification confirmation, or
+ * automatic on WeChatCallActivityProbe's earlier signal (tentative until confirmed -- see that
+ * class's doc). Stopping is either the normal "keep the recording" path (stopService), or, if a
+ * tentative recording is never confirmed as a real call within the timeout window,
+ * [stopAndDiscard] instead -- which stops recording and deletes the result instead of saving it.
  */
 class WeChatCallCaptureService : Service() {
     companion object {
@@ -60,6 +63,19 @@ class WeChatCallCaptureService : Service() {
         private const val SAMPLE_RATE = 16000
         private const val CHANNEL_CONFIG_IN = AudioFormat.CHANNEL_IN_MONO
         private const val AUDIO_FORMAT = AudioFormat.ENCODING_PCM_16BIT
+
+        private var instance: WeChatCallCaptureService? = null
+
+        /**
+         * Stop the current recording (if any) WITHOUT saving it -- used when
+         * WeChatCallNotificationListenerService's pending-confirmation timeout fires with no
+         * notification ever having confirmed this was a real call, so the tentative recording
+         * shouldn't be kept.
+         */
+        fun stopAndDiscard(context: Context) {
+            instance?.discardOnStop = true
+            context.stopService(Intent(context, WeChatCallCaptureService::class.java))
+        }
     }
 
     private var micRecord: AudioRecord? = null
@@ -68,6 +84,12 @@ class WeChatCallCaptureService : Service() {
     private var micBytesWritten = 0L
     private var micFile: File? = null
     private var captureStartedAtMs: Long = 0
+    private var discardOnStop = false
+
+    override fun onCreate() {
+        super.onCreate()
+        instance = this
+    }
 
     override fun onBind(intent: Intent?): IBinder? = null
 
@@ -160,35 +182,46 @@ class WeChatCallCaptureService : Service() {
         }
         micRecord = null
 
-        val micWav = micFile?.let { wrapPcmAsWav(it) }
-        micFile = null
+        if (discardOnStop) {
+            micFile?.delete()
+            micFile = null
+            Log.i(TAG, "Capture discarded (never confirmed as a real call): micBytes=$micBytesWritten")
+        } else {
+            val micWav = micFile?.let { wrapPcmAsWav(it) }
+            micFile = null
 
-        val finalFile: DocumentFile? = if (micWav != null) {
-            try {
-                // Human-readable display name, e.g. "WeChat_2026-09-12_14-30-05". Deliberately
-                // NOT including the ".wav" extension here: moveToOutputDir/createFile appends
-                // the correct extension itself based on the mimeType passed below, so including
-                // it here as well previously produced files literally named "....wav.wav".
-                val displayName = "WeChat_" + SimpleDateFormat(
-                    "yyyy-MM-dd_HH-mm-ss",
-                    Locale.US,
-                ).format(Date(captureStartedAtMs))
+            val finalFile: DocumentFile? = if (micWav != null) {
+                try {
+                    // Human-readable display name, e.g. "WeChat_2026-09-12_14-30-05". Deliberately
+                    // NOT including the ".wav" extension here: moveToOutputDir/createFile appends
+                    // the correct extension itself based on the mimeType passed below, so including
+                    // it here as well previously produced files literally named "....wav.wav".
+                    val displayName = "WeChat_" + SimpleDateFormat(
+                        "yyyy-MM-dd_HH-mm-ss",
+                        Locale.US,
+                    ).format(Date(captureStartedAtMs))
 
-                val dirUtils = OutputDirUtils(applicationContext, OutputDirUtils.NULL_REDACTOR)
-                dirUtils.moveToOutputDir(
-                    DocumentFile.fromFile(micWav),
-                    listOf("WeChat", displayName),
-                    "audio/x-wav",
-                )
-            } catch (e: Exception) {
-                Log.e(TAG, "Failed to move $micWav into user output directory", e)
+                    val dirUtils = OutputDirUtils(applicationContext, OutputDirUtils.NULL_REDACTOR)
+                    dirUtils.moveToOutputDir(
+                        DocumentFile.fromFile(micWav),
+                        listOf("WeChat", displayName),
+                        "audio/x-wav",
+                    )
+                } catch (e: Exception) {
+                    Log.e(TAG, "Failed to move $micWav into user output directory", e)
+                    null
+                }
+            } else {
                 null
             }
-        } else {
-            null
+
+            Log.i(TAG, "Capture stopped: micBytes=$micBytesWritten finalFile=${finalFile?.uri}")
         }
 
-        Log.i(TAG, "Capture stopped: micBytes=$micBytesWritten finalFile=${finalFile?.uri}")
+        if (instance === this) {
+            instance = null
+        }
+        discardOnStop = false
 
         super.onDestroy()
     }

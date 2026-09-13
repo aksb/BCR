@@ -10,25 +10,20 @@ import android.util.Log
 import android.view.accessibility.AccessibilityEvent
 
 /**
- * Diagnostic-only, temporary. Logs the class name of every WeChat (com.tencent.mm) window state
- * change, with a precise timestamp, so it can be compared against when WeChat's call notification
- * appears (logged by WeChatCallNotificationListenerService).
+ * Detects WeChat's (com.tencent.mm) call window appearing, well before WeChat's own call
+ * notification does (up to ~17 seconds earlier was observed on a real "cold" call -- see
+ * WeChatCallNotificationListenerService's class doc for the full story and how this signal is
+ * used safely despite not being provably 100% specific to real calls).
  *
- * The question this exists to answer: real-device testing confirmed WeChat itself is sometimes
- * measurably slower to actually connect a call after being idle for a while (the first call
- * after some time apart takes several seconds longer than back-to-back calls), and our current
- * detection (WeChat's own call notification) only fires once that slow connection finishes. If
- * WeChat's call Activity (observed via `dumpsys activity activities` to be
- * com.tencent.mm.plugin.voip.ui.VideoActivity, for both ringing/unanswered calls and connected
- * ones) becomes foreground BEFORE that slow connection completes, switching detection to watch
- * for it instead could start recording earlier -- capturing a few extra seconds of harmless
- * silence while WeChat is still connecting, instead of missing real content. If it doesn't
- * appear any earlier than the notification, this doesn't help and isn't worth pursuing further.
+ * Real-world testing across normal WeChat usage (chats, Moments, camera, mini programs, video
+ * feed) found zero false triggers of this event, but every trigger is still routed through
+ * WeChatCallNotificationListenerService's pending/confirm/timeout state machine rather than
+ * treated as a guaranteed call, specifically because this can't be proven to NEVER fire for
+ * anything else.
  *
- * Does NOT replace or interact with the current notification-based detection in any way -- purely
- * observational, and does not request window content access (already confirmed blocked by
- * FLAG_SECURE on this device, and not needed for this question anyway -- just the class name
- * reported directly on the event itself).
+ * Does not request window content access -- already confirmed blocked by FLAG_SECURE on this
+ * device, and not needed here anyway; only the fact that WeChat's window state just changed
+ * matters, not what's actually on screen.
  */
 class WeChatCallActivityProbe : AccessibilityService() {
     companion object {
@@ -43,6 +38,7 @@ class WeChatCallActivityProbe : AccessibilityService() {
     override fun onAccessibilityEvent(event: AccessibilityEvent?) {
         event ?: return
         Log.d(TAG, "PROBE: class=${event.className} time=${System.currentTimeMillis()}")
+        WeChatCallNotificationListenerService.notifyProbeEvent()
     }
 
     override fun onInterrupt() {
