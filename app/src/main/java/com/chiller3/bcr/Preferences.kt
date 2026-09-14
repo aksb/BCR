@@ -58,6 +58,7 @@ class Preferences(initialContext: Context) {
         private const val PREF_FLOATING_BUTTON_POS_X = "floating_button_pos_x_fraction"
         private const val PREF_FLOATING_BUTTON_POS_Y = "floating_button_pos_y_fraction"
         private const val PREF_WECHAT_AUTO_RECORD = "wechat_auto_record"
+        private const val PREF_WECHAT_FLOATING_BUTTON = "wechat_floating_button_enabled"
         private const val PREF_WECHAT_CALL_KEYWORDS = "wechat_call_keywords"
 
         /**
@@ -446,6 +447,16 @@ class Preferences(initialContext: Context) {
     var wechatAutoRecord: Boolean
         get() = prefs.getBoolean(PREF_WECHAT_AUTO_RECORD, false)
         set(enabled) = prefs.edit { putBoolean(PREF_WECHAT_AUTO_RECORD, enabled) }
+
+    /**
+     * Independent from [floatingButtonEnabled] (which only controls the bubble for real phone
+     * calls) -- this controls whether the bubble shows for WeChat calls. Defaults to true to
+     * match the behavior before this setting existed (the WeChat bubble always showed,
+     * unconditionally).
+     */
+    var wechatFloatingButtonEnabled: Boolean
+        get() = prefs.getBoolean(PREF_WECHAT_FLOATING_BUTTON, true)
+        set(enabled) = prefs.edit { putBoolean(PREF_WECHAT_FLOATING_BUTTON, enabled) }
 
     /**
      * Comma-separated keywords matched (as a substring) against WeChat's ongoing call

@@ -94,6 +94,7 @@ fun SettingsScreen(viewModel: SettingsViewModel = viewModel()) {
     val showLauncherIcon = remember(reloadPrefs) { prefs.showLauncherIcon }
     val floatingButtonEnabled = remember(reloadPrefs) { prefs.floatingButtonEnabled }
     val wechatAutoRecord = remember(reloadPrefs) { prefs.wechatAutoRecord }
+    val wechatFloatingButtonEnabled = remember(reloadPrefs) { prefs.wechatFloatingButtonEnabled }
     val wechatCallKeywords = remember(reloadPrefs) { prefs.wechatCallKeywords }
     val isDebugMode = remember(reloadPrefs) { prefs.isDebugMode }
     val forceDirectBoot = remember(reloadPrefs) { prefs.forceDirectBoot }
@@ -200,6 +201,7 @@ fun SettingsScreen(viewModel: SettingsViewModel = viewModel()) {
             showLauncherIcon = showLauncherIcon,
             floatingButtonEnabled = floatingButtonEnabled,
             wechatAutoRecord = wechatAutoRecord,
+            wechatFloatingButtonEnabled = wechatFloatingButtonEnabled,
             wechatCallKeywords = wechatCallKeywords,
             isDebugMode = isDebugMode,
             forceDirectBoot = forceDirectBoot,
@@ -272,6 +274,10 @@ fun SettingsScreen(viewModel: SettingsViewModel = viewModel()) {
                 prefs.wechatAutoRecord = enabled
                 reloadPrefs++
             },
+            onWechatFloatingButtonChange = { enabled ->
+                prefs.wechatFloatingButtonEnabled = enabled
+                reloadPrefs++
+            },
             onWechatCallKeywordsChange = { value ->
                 prefs.wechatCallKeywords = value
                 reloadPrefs++
@@ -331,6 +337,7 @@ private fun SettingsContent(
     showLauncherIcon: Boolean,
     floatingButtonEnabled: Boolean,
     wechatAutoRecord: Boolean,
+    wechatFloatingButtonEnabled: Boolean,
     wechatCallKeywords: String,
     isDebugMode: Boolean,
     forceDirectBoot: Boolean,
@@ -347,6 +354,7 @@ private fun SettingsContent(
     onShowLauncherIconChange: (Boolean) -> Unit,
     onFloatingButtonChange: (Boolean) -> Unit,
     onWechatAutoRecordChange: (Boolean) -> Unit,
+    onWechatFloatingButtonChange: (Boolean) -> Unit,
     onWechatCallKeywordsChange: (String) -> Unit,
     onBackupSettings: () -> Unit,
     onRestoreSettings: () -> Unit,
@@ -360,6 +368,7 @@ private fun SettingsContent(
     var showMinDurationDialog by rememberSaveable { mutableStateOf(false) }
     var showFloatingButtonHelp by rememberSaveable { mutableStateOf(false) }
     var showWechatAutoRecordHelp by rememberSaveable { mutableStateOf(false) }
+    var showWechatFloatingButtonHelp by rememberSaveable { mutableStateOf(false) }
     var showWechatCallKeywordsHelp by rememberSaveable { mutableStateOf(false) }
     var showWechatCallKeywordsDialog by rememberSaveable { mutableStateOf(false) }
     var showModInfoDialog by rememberSaveable { mutableStateOf(false) }
@@ -439,6 +448,38 @@ private fun SettingsContent(
                     }
                 },
                 summary = { Text(text = stringResource(R.string.pref_wechat_auto_record_desc)) },
+                modifier = Modifier.animateItem(),
+            )
+        }
+
+        item(key = "wechat_floating_button") {
+            SwitchPreference(
+                checked = wechatFloatingButtonEnabled,
+                onCheckedChange = onWechatFloatingButtonChange,
+                shapes = BetterSegmentedShapes.middle(),
+                title = {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text(text = stringResource(R.string.pref_wechat_floating_button_name))
+                        val helpDescription = stringResource(
+                            R.string.pref_wechat_floating_button_help_content_description,
+                        )
+                        IconButton(
+                            onClick = { showWechatFloatingButtonHelp = true },
+                            modifier = Modifier
+                                .size(32.dp)
+                                .clearAndSetSemantics { contentDescription = helpDescription },
+                        ) {
+                            Text(
+                                text = "\u24D8", // ⓘ
+                                color = MaterialTheme.colorScheme.primary,
+                                style = MaterialTheme.typography.titleMedium,
+                            )
+                        }
+                    }
+                },
+                summary = {
+                    Text(text = stringResource(R.string.pref_wechat_floating_button_desc))
+                },
                 modifier = Modifier.animateItem(),
             )
         }
@@ -725,6 +766,28 @@ private fun SettingsContent(
         )
     }
 
+    if (showWechatFloatingButtonHelp) {
+        AlertDialog(
+            title = {
+                Text(text = stringResource(R.string.pref_wechat_floating_button_help_title))
+            },
+            text = {
+                Text(
+                    text = stringResource(R.string.pref_wechat_floating_button_help_body),
+                    modifier = Modifier
+                        .verticalScroll(state = rememberScrollState())
+                        .padding(top = 8.dp),
+                )
+            },
+            onDismissRequest = { showWechatFloatingButtonHelp = false },
+            confirmButton = {
+                TextButton(onClick = { showWechatFloatingButtonHelp = false }) {
+                    Text(text = stringResource(android.R.string.ok))
+                }
+            },
+        )
+    }
+
     if (showWechatCallKeywordsDialog) {
         WechatCallKeywordsDialog(
             initialValue = wechatCallKeywords,
@@ -903,6 +966,7 @@ private fun PreviewSettingsScreen() {
                 showLauncherIcon = true,
                 floatingButtonEnabled = false,
                 wechatAutoRecord = false,
+                wechatFloatingButtonEnabled = true,
                 wechatCallKeywords = "语音通话中,视频通话中",
                 isDebugMode = true,
                 forceDirectBoot = false,
@@ -919,6 +983,7 @@ private fun PreviewSettingsScreen() {
                 onShowLauncherIconChange = {},
                 onFloatingButtonChange = {},
                 onWechatAutoRecordChange = {},
+                onWechatFloatingButtonChange = {},
                 onWechatCallKeywordsChange = {},
                 onBackupSettings = {},
                 onRestoreSettings = {},

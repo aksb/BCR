@@ -14,7 +14,7 @@
     <string name="pref_call_recording_name">Call recording</string>
     <string name="pref_call_recording_desc">Record incoming and outgoing phone calls. Microphone and notification permissions are required for recording in the background.</string>
 
-    <string name="pref_record_rules_name">Auto-record rules</string>
+    <string name="pref_record_rules_name">Auto-record rules (excludes WeChat recordings)</string>
     <string name="pref_record_rules_desc">Configure which calls should be automatically recorded.</string>
 
     <string name="pref_output_dir_name">Output directory</string>
@@ -23,7 +23,7 @@
     <string name="pref_output_format_name">Output format (excludes WeChat recordings)</string>
     <string name="pref_output_format_desc">Select an encoding format for the recordings.</string>
 
-    <string name="pref_min_duration_name">Minimum recording duration</string>
+    <string name="pref_min_duration_name">Minimum recording duration (excludes WeChat recordings)</string>
     <plurals name="pref_min_duration_desc">
         <item quantity="one">Keep recordings at least %d second long.</item>
         <item quantity="other">Keep recordings at least %d seconds long.</item>
@@ -45,18 +45,24 @@
     <string name="pref_show_launcher_icon_name">Show launcher icon</string>
     <string name="pref_show_launcher_icon_desc">When the launcher icon is hidden, dial <b>*#*#BCR#*#*</b> to open the app.</string>
 
-    <string name="pref_floating_button_name">Floating recording button</string>
+    <string name="pref_floating_button_name">System call recording bubble</string>
     <string name="pref_floating_button_desc">Show a draggable bubble during calls, with a label that shows what tapping it will do. Tap the ⓘ for details.</string>
     <string name="pref_floating_button_help_content_description">Floating recording button help</string>
     <string name="pref_floating_button_help_title">Floating recording button</string>
-    <string name="pref_floating_button_help_body">Shows a draggable bubble during calls. Tap it to manually start, pause, or resume recording (this mirrors the persistent notification\'s pause/resume buttons, so it\'s reachable even when you can\'t pull down the notification shade, e.g. on a secure lock screen). Before first use, turn on this switch and "Automatic call recording" once each, and grant the requested permissions — otherwise the bubble won\'t appear or won\'t work.\n\nBubble states:\n🟢 Green — not recording, tap to start\n🔴 Red — recording, tap to pause\n\nThis floating button doesn\'t exist in the original app; it\'s an addition made here. How it behaves can get confusing once combined with "Automatic call recording" and the record rules\' initial state ("start recording immediately" vs. "paused, until manually resumed") — please test it with your actual settings and confirm it does what you expect before relying on it, so you don\'t end up with a missed recording.</string>
+    <string name="pref_floating_button_help_body">Shows a draggable bubble during calls. Tap it to manually start, pause, or resume recording (this mirrors the persistent notification\'s pause/resume buttons, so it\'s reachable even when you can\'t pull down the notification shade, e.g. on a secure lock screen). Before first use, turn on this switch and "Automatic call recording" once each, and grant the requested permissions — otherwise the bubble won\'t appear or won\'t work.\n\nBubble states:\n🟢 Green — not recording, tap to start\n🔴 Red — recording, tap to pause\n\nThis floating button doesn\'t exist in the original app; it\'s an addition made here. How it behaves can get confusing once combined with "Automatic call recording" and the record rules\' initial state ("start recording immediately" vs. "paused, until manually resumed") — please test it with your actual settings and confirm it does what you expect before relying on it, so you don\'t end up with a missed recording.\n\nThis switch only affects real phone calls -- WeChat calls have their own separate switch ("WeChat call recording bubble", under "Auto-record WeChat calls"), independent of this one.</string>
     <string name="pref_wechat_auto_record_name">Auto-record WeChat calls</string>
     <string name="pref_wechat_auto_record_desc">Show a draggable bubble during WeChat calls, with a label that shows what tapping it will do. Tap the ⓘ for details.</string>
     <string name="pref_wechat_auto_record_help_content_description">Auto-record WeChat calls help</string>
     <string name="pref_wechat_auto_record_help_title">Auto-record WeChat calls</string>
     <string name="pref_wechat_auto_record_help_body">When a WeChat call is detected, this controls whether recording starts automatically or waits for you to tap the floating bubble yourself.\n\nOff (default, manual) — the bubble appears as soon as a call is detected; recording only starts once you tap it. Confirmed near-instant (well under a second) once tapped.\n\nOn (automatic) — recording starts the moment a call is detected, no tap needed; the bubble still appears, already showing its "recording" state, purely as a visual confirmation that it\'s happening (tapping it in this mode stops the recording early).\n\nEither way, recording always stops automatically as soon as WeChat\'s call notification disappears (hanging up, the other side hanging up, switching to answer an incoming cellular call, etc.) -- this setting only affects how recording starts, not how it stops.\n\nThe trade-off: WeChat itself is sometimes measurably slower to actually connect a call after being idle for a while (repeatedly confirmed on real devices: the first call after some time apart takes several seconds longer than back-to-back calls) -- when that happens, automatic mode can miss the first few seconds of audio, while manual mode never does, since you\'re reacting to seeing the bubble rather than to WeChat\'s own possibly-delayed call state. Choose based on whether you\'d rather not have to remember to tap, or never risk losing the start of a call.</string>
 
-    <string name="pref_wechat_call_keywords_name">WeChat call keywords</string>
+    <string name="pref_wechat_floating_button_name">WeChat call recording bubble</string>
+    <string name="pref_wechat_floating_button_desc">Show a draggable bubble during WeChat calls, with a label that shows what tapping it will do. Tap the ⓘ for details.</string>
+    <string name="pref_wechat_floating_button_help_content_description">WeChat call recording bubble help</string>
+    <string name="pref_wechat_floating_button_help_title">WeChat call recording bubble</string>
+    <string name="pref_wechat_floating_button_help_body">Independent from "System call recording bubble" above (which only affects real phone calls) -- this controls whether the bubble shows for WeChat calls at all. Turning it off doesn\'t affect "Auto-record WeChat calls" or the WeChat Quick Settings tile, only whether the bubble itself appears; recording can still start/stop via automatic mode or the tile with this off, you just won\'t see a bubble confirming it.\n\nDefaults to on, matching the bubble\'s original always-on behavior before this switch existed.</string>
+
+    <string name="pref_wechat_call_keywords_name">WeChat call keywords (editable)</string>
     <string name="pref_wechat_call_keywords_dialog_hint">Comma-separated. A WeChat notification is treated as a call if its text contains any one of these.</string>
     <string name="pref_wechat_call_keywords_reset">Reset to default</string>
     <string name="pref_wechat_call_keywords_help_content_description">WeChat call keywords help</string>
@@ -318,6 +324,8 @@
 
     <!-- Quick settings tile -->
     <string name="quick_settings_label">Call recording</string>
+    <string name="tile_wechat_recorder_label_inactive">WeChat recording</string>
+    <string name="tile_wechat_recorder_label_active">WeChat recording…</string>
 
     <!-- Snackbar alerts -->
     <string name="browser_not_found">No web browser is available.</string>

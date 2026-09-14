@@ -9,11 +9,13 @@ import android.app.Notification
 import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.app.Service
+import android.content.ComponentName
 import android.content.Intent
 import android.media.AudioFormat
 import android.media.AudioRecord
 import android.media.MediaRecorder
 import android.os.IBinder
+import android.service.quicksettings.TileService
 import android.util.Log
 import androidx.documentfile.provider.DocumentFile
 import com.chiller3.bcr.output.OutputDirUtils
@@ -46,10 +48,21 @@ import kotlin.concurrent.thread
  * this device regardless, so that dead-end code (the grant screen, the MediaProjection holder,
  * the playback-capture attempt here) was removed rather than kept as unused weight.
  *
- * Started/stopped by WeChatCallNotificationListenerService: recording start is either fully
- * manual (the user taps the floating bubble) or automatic (if the user has enabled that in
- * settings), but stopping is always automatic, triggered by WeChat's call notification
- * disappearing.
+ * Started/stopped from three possible places, all converging on the same instance since only one
+ * recording can be in progress at a time:
+ *  - WeChatCallNotificationListenerService: fully manual (the user taps the floating bubble) or
+ *    automatic (Preferences.wechatAutoRecord), triggered by call detection; always stops
+ *    automatically when WeChat's call notification disappears.
+ *  - WeChatRecorderTileService: a Quick Settings tile that starts/stops recording directly,
+ *    independent of call detection entirely -- meant to be tapped BEFORE a call even begins, to
+ *    sidestep WeChat's own detection-timing quirks completely (see that class's doc). If tapped
+ *    with no call ever actually happening, there's no notification to trigger an automatic stop,
+ *    so it keeps recording until manually stopped (via the tile again, or the bubble once/if a
+ *    real call does get detected and confirms it).
+ *  - The floating bubble itself, via WeChatCallNotificationListenerService.toggleRecordingFromBubble.
+ *
+ * [isRunning] is the single source of truth all three check to know whether a recording is
+ * already in progress, so none of them ever start a second, overlapping one.
  */
 class WeChatCallCaptureService : Service() {
     companion object {
@@ -60,6 +73,10 @@ class WeChatCallCaptureService : Service() {
         private const val SAMPLE_RATE = 16000
         private const val CHANNEL_CONFIG_IN = AudioFormat.CHANNEL_IN_MONO
         private const val AUDIO_FORMAT = AudioFormat.ENCODING_PCM_16BIT
+
+        /** Whether a WeChat call recording is currently in progress, regardless of how it was started. */
+        var isRunning = false
+            private set
     }
 
     private var micRecord: AudioRecord? = null
@@ -68,6 +85,12 @@ class WeChatCallCaptureService : Service() {
     private var micBytesWritten = 0L
     private var micFile: File? = null
     private var captureStartedAtMs: Long = 0
+
+    override fun onCreate() {
+        super.onCreate()
+        isRunning = true
+        requestTileRefresh()
+    }
 
     override fun onBind(intent: Intent?): IBinder? = null
 
@@ -190,7 +213,22 @@ class WeChatCallCaptureService : Service() {
 
         Log.i(TAG, "Capture stopped: micBytes=$micBytesWritten finalFile=${finalFile?.uri}")
 
+        isRunning = false
+        requestTileRefresh()
+
         super.onDestroy()
+    }
+
+    /**
+     * Nudges WeChatRecorderTileService to re-check [isRunning] and update its appearance, in case
+     * it's currently visible (e.g. the Quick Settings panel is open) when recording starts/stops
+     * via some other path than the tile itself (the bubble, or auto-record on call detection).
+     */
+    private fun requestTileRefresh() {
+        TileService.requestListeningState(
+            this,
+            ComponentName(this, WeChatRecorderTileService::class.java),
+        )
     }
 
     /**

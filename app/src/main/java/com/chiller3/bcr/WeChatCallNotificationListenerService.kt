@@ -64,6 +64,18 @@ import android.util.Log
  * since reacting a little late to an ending call only means a few extra seconds of harmless
  * trailing silence, not missing content -- unlike the START side, which is why that part alone
  * gets the manual-by-default treatment above.
+ *
+ * ANOTHER WAY TO AVOID THE MISSING-AUDIO PROBLEM ENTIRELY (2026-09-13): WeChatRecorderTileService
+ * (a Quick Settings tile) starts/stops recording directly, independent of call detection -- meant
+ * to be tapped BEFORE placing/answering a call, sidestepping WeChat's timing quirks completely
+ * instead of trying to detect around them. If a call is later detected while such a recording is
+ * already running, it's adopted (not restarted) here, and the bubble (if enabled) shows it as
+ * already recording.
+ *
+ * Preferences.wechatFloatingButtonEnabled independently controls whether the bubble shows for
+ * WeChat calls at all (separate from Preferences.floatingButtonEnabled, which only affects real
+ * phone calls) -- turning it off doesn't affect wechatAutoRecord or the tile, only whether the
+ * bubble itself appears.
  */
 class WeChatCallNotificationListenerService : NotificationListenerService() {
     companion object {
@@ -121,14 +133,29 @@ class WeChatCallNotificationListenerService : NotificationListenerService() {
         activeCallKey = sbn.key
         Log.i(TAG, "WeChat call started: text=[$text] key=${sbn.key}")
 
-        if (Preferences(this).wechatAutoRecord) {
+        val prefs = Preferences(this)
+
+        // A recording may already be running -- started earlier via WeChatRecorderTileService
+        // (tapped before this call even began, specifically to sidestep WeChat's own detection
+        // delay) or via a manual bubble tap during some earlier state. Either way, adopt it
+        // rather than starting a second, overlapping one.
+        val alreadyRecording = WeChatCallCaptureService.isRunning
+        isRecording = alreadyRecording
+
+        if (!alreadyRecording && prefs.wechatAutoRecord) {
             isRecording = true
             startForegroundService(Intent(this, WeChatCallCaptureService::class.java))
-            FloatingButtonService.show(this, FloatingBubbleUi.BubbleState.RECORDING) {
-                toggleRecordingFromBubble()
-            }
-        } else {
-            FloatingButtonService.show(this, FloatingBubbleUi.BubbleState.NOT_RECORDING) {
+        }
+
+        if (prefs.wechatFloatingButtonEnabled) {
+            FloatingButtonService.show(
+                this,
+                if (isRecording) {
+                    FloatingBubbleUi.BubbleState.RECORDING
+                } else {
+                    FloatingBubbleUi.BubbleState.NOT_RECORDING
+                },
+            ) {
                 toggleRecordingFromBubble()
             }
         }
