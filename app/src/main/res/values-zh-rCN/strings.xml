@@ -55,6 +55,13 @@
     <string name="pref_wechat_auto_record_help_content_description">微信通话自动录音说明</string>
     <string name="pref_wechat_auto_record_help_title">微信通话自动录音</string>
     <string name="pref_wechat_auto_record_help_body">检测到微信通话时，这个开关决定录音是自动开始，还是等你自己点悬浮球才开始。\n\n关闭（默认，手动）——检测到通话就弹出悬浮球，但要等你点一下才真正开始录音。实测点击后几乎瞬间（不到一秒）就会开始录。\n\n打开（自动）——检测到通话立刻自动开始录音，不用你点；悬浮球依然会弹出来，但一开始就是"录音中"的样子，纯粹用来给你一个"确实在录"的视觉确认（这个模式下点悬浮球会提前手动结束这次录音）。\n\n不管选哪种模式，只要检测到微信通话的通知消失（挂断、被挂断、切去接系统来电等），都会自动停止录音——这个开关只影响"怎么开始"，不影响"怎么结束"。\n\n取舍在这：微信自己有时候在隔了一段时间没打电话后，接通速度会明显变慢（实测确认过：隔一段时间后第一通电话，比紧接着连打的电话慢好几秒才真正接通）。遇到这种情况，自动模式可能会录丢开头几秒；手动模式不会有这个问题，因为你是看到悬浮球才反应，不是被微信自己可能延迟的通话状态牵着走。图省心还是绝不想漏录开头，自己权衡。</string>
+
+    <string name="pref_wechat_call_keywords_name">微信通话关键词</string>
+    <string name="pref_wechat_call_keywords_dialog_hint">多个关键词请用英文逗号分隔。微信通知里的文字只要包含其中任意一个，就会被判定为一通通话。</string>
+    <string name="pref_wechat_call_keywords_reset">恢复默认</string>
+    <string name="pref_wechat_call_keywords_help_content_description">微信通话关键词说明</string>
+    <string name="pref_wechat_call_keywords_help_title">微信通话关键词</string>
+    <string name="pref_wechat_call_keywords_help_body">没有办法直接问微信"现在是不是正在通话"，检测通话这件事，靠的是盯着微信自己发的那条"通话中"常驻通知，看它的文字里有没有包含这里列出的关键词（默认是语音通话对应的"语音通话中"、视频通话对应的"视频通话中"）。\n\n这个办法天生就不结实：只要以后微信更新版本，把这几个字改了（哪怕只改一点点），检测会悄无声息地失效——不会报错、不会提示，就是悬浮球和自动录音突然不再出现了。这种情况没法提前预测或者防范。\n\n真遇到这种情况，不用等我们出新版本，你自己就能在这里改：打开微信，发起或接一通电话，看看现在通知栏实际显示的是什么字，把这段文字原样加到这里（用逗号跟原来的关键词隔开，这样新旧两种说法都能识别）。如果不小心把这里清空了，系统会自动退回内置的默认关键词，不会因为空白就彻底失效——但如果想重新开始，还是用"恢复默认"这个按钮更保险。</string>
     <string name="floating_bubble_label_not_recording">点击录音</string>
     <string name="floating_bubble_label_recording">点击暂停</string>
 

@@ -58,6 +58,16 @@ class Preferences(initialContext: Context) {
         private const val PREF_FLOATING_BUTTON_POS_X = "floating_button_pos_x_fraction"
         private const val PREF_FLOATING_BUTTON_POS_Y = "floating_button_pos_y_fraction"
         private const val PREF_WECHAT_AUTO_RECORD = "wechat_auto_record"
+        private const val PREF_WECHAT_CALL_KEYWORDS = "wechat_call_keywords"
+
+        /**
+         * Default keywords matched (as a substring, case-sensitively) against WeChat's ongoing
+         * call notification text. Comma-separated in storage/UI since that's the simplest thing
+         * for a user to type and edit themselves if WeChat ever changes its wording -- see
+         * Preferences.wechatCallKeywords's doc for why that matters.
+         */
+        val DEFAULT_WECHAT_CALL_KEYWORDS = listOf("语音通话中", "视频通话中")
+        val DEFAULT_WECHAT_CALL_KEYWORDS_STRING = DEFAULT_WECHAT_CALL_KEYWORDS.joinToString(",")
 
         // Legacy preferences.
         private const val PREF_FORMAT_STEREO = "stereo"
@@ -436,6 +446,37 @@ class Preferences(initialContext: Context) {
     var wechatAutoRecord: Boolean
         get() = prefs.getBoolean(PREF_WECHAT_AUTO_RECORD, false)
         set(enabled) = prefs.edit { putBoolean(PREF_WECHAT_AUTO_RECORD, enabled) }
+
+    /**
+     * Comma-separated keywords matched (as a substring) against WeChat's ongoing call
+     * notification text to detect a call. User-editable specifically because this is a fragile,
+     * "just matches whatever text WeChat currently happens to use" mechanism (there's no way to
+     * reliably read WeChat's actual call state) -- if WeChat ever changes its wording, detection
+     * silently stops working until this is updated, and there's no way for us to predict or fix
+     * that in advance. Letting the user edit it directly means that's a quick self-service fix
+     * instead of a wait for a new build.
+     *
+     * Falls back to [DEFAULT_WECHAT_CALL_KEYWORDS_STRING] if never set.
+     */
+    var wechatCallKeywords: String
+        get() = prefs.getString(PREF_WECHAT_CALL_KEYWORDS, null)
+            ?: DEFAULT_WECHAT_CALL_KEYWORDS_STRING
+        set(value) = prefs.edit { putString(PREF_WECHAT_CALL_KEYWORDS, value) }
+
+    /**
+     * [wechatCallKeywords], split on commas, trimmed, and with blanks dropped. Falls back to
+     * [DEFAULT_WECHAT_CALL_KEYWORDS] if that would otherwise be empty (e.g. the user cleared the
+     * field entirely) -- silently matching against zero keywords would mean call detection
+     * simply never fires again, with no indication anything is wrong, which is worse than
+     * falling back to the default.
+     */
+    val wechatCallKeywordsList: List<String>
+        get() {
+            val parsed = wechatCallKeywords.split(",")
+                .map { it.trim() }
+                .filter { it.isNotEmpty() }
+            return parsed.ifEmpty { DEFAULT_WECHAT_CALL_KEYWORDS }
+        }
 
     /**
      * The floating button's last user-dragged position, as a fraction (0f..1f) of the screen
