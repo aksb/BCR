@@ -11,6 +11,7 @@ import android.content.res.Configuration
 import android.net.Uri
 import android.provider.DocumentsContract
 import android.provider.Settings
+import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.clickable
@@ -271,12 +272,30 @@ fun SettingsScreen(viewModel: SettingsViewModel = viewModel()) {
                 }
             },
             onWechatAutoRecordChange = { enabled ->
-                prefs.wechatAutoRecord = enabled
-                reloadPrefs++
+                if (!enabled || Permissions.isNotificationListenerEnabled(context)) {
+                    prefs.wechatAutoRecord = enabled
+                    reloadPrefs++
+                } else {
+                    Toast.makeText(
+                        context,
+                        context.getString(R.string.toast_notification_listener_required),
+                        Toast.LENGTH_LONG,
+                    ).show()
+                    requestSettings.launch(Permissions.getNotificationListenerSettingsIntent())
+                }
             },
             onWechatFloatingButtonChange = { enabled ->
-                prefs.wechatFloatingButtonEnabled = enabled
-                reloadPrefs++
+                if (!enabled || Permissions.isNotificationListenerEnabled(context)) {
+                    prefs.wechatFloatingButtonEnabled = enabled
+                    reloadPrefs++
+                } else {
+                    Toast.makeText(
+                        context,
+                        context.getString(R.string.toast_notification_listener_required),
+                        Toast.LENGTH_LONG,
+                    ).show()
+                    requestSettings.launch(Permissions.getNotificationListenerSettingsIntent())
+                }
             },
             onWechatCallKeywordsChange = { value ->
                 prefs.wechatCallKeywords = value
@@ -382,6 +401,7 @@ private fun SettingsContent(
             )
         }
 
+        // Group 1: system call recording.
         item(key = "call_recording") {
             SwitchPreference(
                 checked = callRecording,
@@ -422,11 +442,26 @@ private fun SettingsContent(
             )
         }
 
+        item(key = "record_rules") {
+            Preference(
+                onClick = onRecordRulesSettings,
+                shapes = BetterSegmentedShapes.bottom(),
+                title = { Text(text = stringResource(R.string.pref_record_rules_name)) },
+                summary = { Text(text = stringResource(R.string.pref_record_rules_desc)) },
+                modifier = Modifier.animateItem(),
+            )
+        }
+
+        item(key = "wechat_group_gap") {
+            PreferenceGap(modifier = Modifier.animateItem())
+        }
+
+        // Group 2: WeChat call recording.
         item(key = "wechat_auto_record") {
             SwitchPreference(
                 checked = wechatAutoRecord,
                 onCheckedChange = onWechatAutoRecordChange,
-                shapes = BetterSegmentedShapes.middle(),
+                shapes = BetterSegmentedShapes.top(),
                 title = {
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Text(text = stringResource(R.string.pref_wechat_auto_record_name))
@@ -487,7 +522,7 @@ private fun SettingsContent(
         item(key = "wechat_call_keywords") {
             Preference(
                 onClick = { showWechatCallKeywordsDialog = true },
-                shapes = BetterSegmentedShapes.middle(),
+                shapes = BetterSegmentedShapes.bottom(),
                 title = {
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Text(text = stringResource(R.string.pref_wechat_call_keywords_name))
@@ -513,21 +548,16 @@ private fun SettingsContent(
             )
         }
 
-        item(key = "record_rules") {
-            Preference(
-                onClick = onRecordRulesSettings,
-                shapes = BetterSegmentedShapes.middle(),
-                title = { Text(text = stringResource(R.string.pref_record_rules_name)) },
-                summary = { Text(text = stringResource(R.string.pref_record_rules_desc)) },
-                modifier = Modifier.animateItem(),
-            )
+        item(key = "output_group_gap") {
+            PreferenceGap(modifier = Modifier.animateItem())
         }
 
+        // Group 3: output settings (all excluding WeChat recordings).
         item(key = "output_dir") {
             Preference(
                 onClick = onOutputDirSettings,
                 onLongClick = onOutputDirOpen,
-                shapes = BetterSegmentedShapes.middle(),
+                shapes = BetterSegmentedShapes.top(),
                 title = { Text(text = stringResource(R.string.pref_output_dir_name)) },
                 summary = { Text(text = outputDirSummary(outputDir, retention)) },
                 modifier = Modifier.animateItem(),
@@ -537,21 +567,17 @@ private fun SettingsContent(
         item(key = "output_format") {
             Preference(
                 onClick = onOutputFormatSettings,
-                shapes = BetterSegmentedShapes.bottom(),
+                shapes = BetterSegmentedShapes.middle(),
                 title = { Text(text = stringResource(R.string.pref_output_format_name)) },
                 summary = { Text(text = outputFormatSummary(savedFormat)) },
                 modifier = Modifier.animateItem(),
             )
         }
 
-        item(key = "advanced") {
-            PreferenceGap(modifier = Modifier.animateItem())
-        }
-
         item(key = "min_duration") {
             Preference(
                 onClick = { showMinDurationDialog = true },
-                shapes = BetterSegmentedShapes.top(),
+                shapes = BetterSegmentedShapes.middle(),
                 title = { Text(text = stringResource(R.string.pref_min_duration_name)) },
                 summary = { Text(text = minDurationSummary(minDuration)) },
                 modifier = Modifier.animateItem(),
@@ -569,24 +595,29 @@ private fun SettingsContent(
             )
         }
 
-        item(key = "record_telecom_apps") {
-            SwitchPreference(
-                checked = recordTelecomApps,
-                onCheckedChange = onRecordTelecomAppsChange,
-                shapes = BetterSegmentedShapes.middle(),
-                title = { Text(text = stringResource(R.string.pref_record_telecom_apps_name)) },
-                summary = { Text(text = stringResource(R.string.pref_record_telecom_apps_desc)) },
-                modifier = Modifier.animateItem(),
-            )
-        }
-
         item(key = "record_dialing_state") {
             SwitchPreference(
                 checked = recordDialingState,
                 onCheckedChange = onRecordDialingStateChange,
-                shapes = BetterSegmentedShapes.middle(),
+                shapes = BetterSegmentedShapes.bottom(),
                 title = { Text(text = stringResource(R.string.pref_record_dialing_state_name)) },
                 summary = { Text(text = stringResource(R.string.pref_record_dialing_state_desc)) },
+                modifier = Modifier.animateItem(),
+            )
+        }
+
+        item(key = "advanced") {
+            PreferenceGap(modifier = Modifier.animateItem())
+        }
+
+        // Group 4: everything else, unchanged.
+        item(key = "record_telecom_apps") {
+            SwitchPreference(
+                checked = recordTelecomApps,
+                onCheckedChange = onRecordTelecomAppsChange,
+                shapes = BetterSegmentedShapes.top(),
+                title = { Text(text = stringResource(R.string.pref_record_telecom_apps_name)) },
+                summary = { Text(text = stringResource(R.string.pref_record_telecom_apps_desc)) },
                 modifier = Modifier.animateItem(),
             )
         }

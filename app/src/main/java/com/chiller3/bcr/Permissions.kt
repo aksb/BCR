@@ -12,6 +12,7 @@ import android.content.pm.PackageManager
 import android.net.Uri
 import android.os.Build
 import android.provider.Settings
+import androidx.core.app.NotificationManagerCompat
 import androidx.core.content.ContextCompat
 
 object Permissions {
@@ -44,4 +45,25 @@ object Permissions {
         Settings.ACTION_APPLICATION_DETAILS_SETTINGS,
         Uri.fromParts("package", context.packageName, null),
     )
+
+    /**
+     * Check whether this app currently has notification listener access granted.
+     *
+     * WeChatCallNotificationListenerService (which both "Auto-record WeChat calls" and "WeChat
+     * call recording bubble" depend on) needs this system-level "notification access" permission
+     * to work at all. It cannot be requested via the normal runtime permission dialog -- the user
+     * has to grant it manually from Settings > Apps > Special app access > Notification access.
+     * Previously nothing checked this before letting either switch be turned on, so users could
+     * flip them on with no permission granted and silently get no recordings at all.
+     */
+    fun isNotificationListenerEnabled(context: Context): Boolean =
+        NotificationManagerCompat.getEnabledListenerPackages(context)
+            .contains(context.packageName)
+
+    /**
+     * Get intent for opening the system's notification listener access settings screen, so the
+     * user can grant (or review) notification access for this app.
+     */
+    fun getNotificationListenerSettingsIntent() =
+        Intent(Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS)
 }

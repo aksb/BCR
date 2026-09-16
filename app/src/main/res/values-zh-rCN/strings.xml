@@ -11,10 +11,10 @@
     <string name="pref_header_debug">调试</string>
 
     <!-- General preferences -->
-    <string name="pref_call_recording_name">通话自动录音</string>
+    <string name="pref_call_recording_name">系统通话自动录音</string>
     <string name="pref_call_recording_desc">录制来电和去电。后台录音需要麦克风和通知权限</string>
 
-    <string name="pref_record_rules_name">自动录音规则（不含微信录音）</string>
+    <string name="pref_record_rules_name">系统通话自动录音规则</string>
     <string name="pref_record_rules_desc">配置哪些通话应自动录音</string>
 
     <string name="pref_output_dir_name">保存目录</string>
@@ -29,13 +29,13 @@
     </plurals>
     <string name="pref_min_duration_desc_zero">保留任意时长的录音</string>
 
-    <string name="pref_write_metadata_name">保存元数据文件</string>
+    <string name="pref_write_metadata_name">保存元数据文件（不含微信录音）</string>
     <string name="pref_write_metadata_desc">创建同名 JSON 文件包含通话录音详情</string>
 
     <string name="pref_record_telecom_apps_name">录制集成通话系统的应用</string>
     <string name="pref_record_telecom_apps_desc">录制集成了Android通话系统（Telecom system）的第三方应用通话。这些通话的录音很可能只包含静音</string>
 
-    <string name="pref_record_dialing_state_name">接通前开始录音</string>
+    <string name="pref_record_dialing_state_name">接通前开始录音（不含微信录音）</string>
     <string name="pref_record_dialing_state_desc">对于去电，在拨号开始时立即录音，而不是等待通话接通</string>
 
     <string name="pref_notification_open_dir_name">从通知中打开目录</string>
@@ -56,13 +56,15 @@
     <string name="pref_wechat_auto_record_help_title">微信通话自动录音</string>
     <string name="pref_wechat_auto_record_help_body">检测到微信通话时，这个开关决定录音是自动开始，还是等你自己点悬浮球才开始。\n\n关闭（默认，手动）——检测到通话就弹出悬浮球，但要等你点一下才真正开始录音。实测点击后几乎瞬间（不到一秒）就会开始录。\n\n打开（自动）——检测到通话立刻自动开始录音，不用你点；悬浮球依然会弹出来，但一开始就是"录音中"的样子，纯粹用来给你一个"确实在录"的视觉确认（这个模式下点悬浮球会提前手动结束这次录音）。\n\n不管选哪种模式，只要检测到微信通话的通知消失（挂断、被挂断、切去接系统来电等），都会自动停止录音——这个开关只影响"怎么开始"，不影响"怎么结束"。\n\n取舍在这：微信自己有时候在隔了一段时间没打电话后，接通速度会明显变慢（实测确认过：隔一段时间后第一通电话，比紧接着连打的电话慢好几秒才真正接通）。遇到这种情况，自动模式可能会录丢开头几秒；手动模式不会有这个问题，因为你是看到悬浮球才反应，不是被微信自己可能延迟的通话状态牵着走。图省心还是绝不想漏录开头，自己权衡。</string>
 
-    <string name="pref_wechat_floating_button_name">微信电话录音球</string>
+    <string name="pref_wechat_floating_button_name">微信通话录音球</string>
     <string name="pref_wechat_floating_button_desc">微信通话时显示一个可拖动的悬浮球，球下面会带一行小字提示点击后的效果。点击ⓘ查看详细说明。</string>
     <string name="pref_wechat_floating_button_help_content_description">微信电话录音球说明</string>
     <string name="pref_wechat_floating_button_help_title">微信电话录音球</string>
     <string name="pref_wechat_floating_button_help_body">跟上面的"系统通话录音球"是两个独立的开关（那个只管真实电话）——这个开关单独控制微信通话时悬浮球显不显示。关掉它不影响"微信通话自动录音"或者微信录音磁贴照常工作，只是不会再弹出悬浮球给你看，录音该开始/停止还是会正常进行，只是少了一个"确实在录"的视觉提示。\n\n默认开启，跟这个开关加进来之前"悬浮球一直无条件显示"的老行为保持一致。</string>
 
-    <string name="pref_wechat_call_keywords_name">微信通话关键词（可编辑）</string>
+    <string name="toast_notification_listener_required">需要先在系统设置中开启本应用的"通知使用权"，微信通话录音才能生效，即将跳转设置</string>
+
+    <string name="pref_wechat_call_keywords_name">微信通话关键词（点击可编辑）</string>
     <string name="pref_wechat_call_keywords_dialog_hint">多个关键词请用英文逗号分隔。微信通知里的文字只要包含其中任意一个，就会被判定为一通通话。</string>
     <string name="pref_wechat_call_keywords_reset">恢复默认</string>
     <string name="pref_wechat_call_keywords_help_content_description">微信通话关键词说明</string>

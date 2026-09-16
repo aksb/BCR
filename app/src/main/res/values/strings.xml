@@ -11,10 +11,10 @@
     <string name="pref_header_debug">Debug</string>
 
     <!-- General preferences -->
-    <string name="pref_call_recording_name">Call recording</string>
+    <string name="pref_call_recording_name">Call recording (system calls)</string>
     <string name="pref_call_recording_desc">Record incoming and outgoing phone calls. Microphone and notification permissions are required for recording in the background.</string>
 
-    <string name="pref_record_rules_name">Auto-record rules (excludes WeChat recordings)</string>
+    <string name="pref_record_rules_name">Auto-record rules (system calls)</string>
     <string name="pref_record_rules_desc">Configure which calls should be automatically recorded.</string>
 
     <string name="pref_output_dir_name">Output directory</string>
@@ -30,13 +30,13 @@
     </plurals>
     <string name="pref_min_duration_desc_zero">Keep recordings of any length.</string>
 
-    <string name="pref_write_metadata_name">Write metadata file</string>
+    <string name="pref_write_metadata_name">Write metadata file (excludes WeChat recordings)</string>
     <string name="pref_write_metadata_desc">Create a JSON file containing details about the call next to the audio file.</string>
 
     <string name="pref_record_telecom_apps_name">Record telecom-integrated calls</string>
     <string name="pref_record_telecom_apps_desc">Record calls from third-party apps that use the Android telecom framework. Recordings of these calls will likely contain incomplete, missing or otherwise unusable audio.</string>
 
-    <string name="pref_record_dialing_state_name">Record calls before connection</string>
+    <string name="pref_record_dialing_state_name">Record calls before connection (excludes WeChat recordings)</string>
     <string name="pref_record_dialing_state_desc">For outgoing calls, start recording as soon as dialing begins instead of waiting until the call connects.</string>
 
     <string name="pref_notification_open_dir_name">Open directory from notification</string>
@@ -62,6 +62,8 @@
     <string name="pref_wechat_floating_button_help_title">WeChat call recording bubble</string>
     <string name="pref_wechat_floating_button_help_body">Independent from "System call recording bubble" above (which only affects real phone calls) -- this controls whether the bubble shows for WeChat calls at all. Turning it off doesn\'t affect "Auto-record WeChat calls" or the WeChat Quick Settings tile, only whether the bubble itself appears; recording can still start/stop via automatic mode or the tile with this off, you just won\'t see a bubble confirming it.\n\nDefaults to on, matching the bubble\'s original always-on behavior before this switch existed.</string>
 
+    <string name="toast_notification_listener_required">需要先在系统设置中开启本应用的"通知使用权"，微信通话录音才能生效，即将跳转设置</string>
+
     <string name="pref_wechat_call_keywords_name">WeChat call keywords (editable)</string>
     <string name="pref_wechat_call_keywords_dialog_hint">Comma-separated. A WeChat notification is treated as a call if its text contains any one of these.</string>
     <string name="pref_wechat_call_keywords_reset">Reset to default</string>
@@ -86,7 +88,7 @@
     <string name="pref_mod_info_name">关于本修改版</string>
     <string name="pref_mod_info_desc">修改说明与项目地址</string>
     <string name="pref_mod_info_dialog_title">关于本修改版</string>
-    <string name="pref_mod_info_dialog_body">本软件基于开源项目 BCR 二次开发，新增了来电界面录音按钮，方便锁屏状态下无法下拉通知栏时快速开始/暂停录音。\n\n本项目与原作者无关，问题反馈请提交到本项目地址，勿打扰原作者。</string>
+    <string name="pref_mod_info_dialog_body">本软件基于开源项目 BCR 二次开发，新增了微信通话录音功能、来电界面录音按钮，方便锁屏状态下无法下拉通知栏时快速开始/暂停录音。\n\n本项目与原作者无关，问题反馈请提交到本项目地址，勿打扰原作者。</string>
     <string name="pref_mod_info_original_repo">原始项目：github.com/chenxiaolong/BCR</string>
     <string name="pref_mod_info_this_repo">本项目地址：github.com/aksb/BCR</string>
 

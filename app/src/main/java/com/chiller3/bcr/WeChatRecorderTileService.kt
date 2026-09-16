@@ -38,29 +38,46 @@ class WeChatRecorderTileService : TileService() {
     override fun onClick() {
         super.onClick()
 
-        if (WeChatCallCaptureService.isRunning) {
-            stopService(Intent(this, WeChatCallCaptureService::class.java))
-        } else {
+        // Decide the target state BEFORE issuing the start/stop call, and use that same value
+        // (not another read of WeChatCallCaptureService.isRunning) for every bit of UI we update
+        // below. start/stopService() only *requests* the transition -- the static isRunning flag
+        // itself isn't actually flipped until the service's own onCreate()/onDestroy() runs,
+        // which happens asynchronously (queued on the main looper), so reading it again this soon
+        // would still return the OLD value and make the tile/bubble show stale state until some
+        // later, unrelated refresh happens to catch up. (WeChatCallNotificationListenerService's
+        // toggleRecording() uses this same "decide first, trust that value" approach and doesn't
+        // have this problem.)
+        val startingRecording = !WeChatCallCaptureService.isRunning
+
+        if (startingRecording) {
             startForegroundService(Intent(this, WeChatCallCaptureService::class.java))
+        } else {
+            stopService(Intent(this, WeChatCallCaptureService::class.java))
         }
 
         // Keep the bubble in sync too, in case one happens to already be showing (e.g. a call
         // was detected first and this tile is being used mid-call instead of the bubble itself).
         // Safe no-op if no bubble is currently showing.
         FloatingButtonService.setBubbleState(
-            if (WeChatCallCaptureService.isRunning) {
+            if (startingRecording) {
                 FloatingBubbleUi.BubbleState.RECORDING
             } else {
                 FloatingBubbleUi.BubbleState.NOT_RECORDING
             },
         )
 
-        refreshTileState()
+        refreshTileState(startingRecording)
     }
 
-    private fun refreshTileState() {
+    /**
+     * @param runningOverride the state to show immediately after a click, before
+     * WeChatCallCaptureService.isRunning has actually caught up (see [onClick]). Omitted when
+     * called from [onStartListening], where enough time has always already passed for
+     * [WeChatCallCaptureService.isRunning] to be accurate on its own.
+     */
+    private fun refreshTileState(runningOverride: Boolean? = null) {
         val tile = qsTile ?: return
-        val running = WeChatCallCaptureService.isRunning
+        val running = runningOverride ?: WeChatCallCaptureService.isRunning
 
         tile.state = if (running) Tile.STATE_ACTIVE else Tile.STATE_INACTIVE
         tile.label = getString(
