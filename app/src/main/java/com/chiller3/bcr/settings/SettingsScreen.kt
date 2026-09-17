@@ -1035,6 +1035,7 @@ private fun PreviewSettingsScreen() {
                 forceDirectBoot = false,
                 onCallRecordingChange = {},
                 onRecordRulesSettings = {},
+                onPermissionsSettings = {},
                 onOutputDirSettings = {},
                 onOutputDirOpen = {},
                 onOutputFormatSettings = {},
