@@ -7,6 +7,26 @@
 
     <!-- Preference headers -->
     <string name="pref_header_general">常规</string>
+
+    <!-- Permissions "preference" -->
+    <string name="pref_permissions_name">应用授权</string>
+    <string name="pref_permissions_desc">查看录音所需的全部权限，一键补齐未授予的项目</string>
+    <string name="pref_grant_all_name">一键授权</string>
+    <string name="pref_grant_all_desc">依次弹出下面还未授予的每一项权限，全部处理完即可返回</string>
+    <string name="pref_permissions_required_header">必需权限</string>
+    <string name="pref_permissions_optional_header">可选权限</string>
+    <string name="pref_permission_mic_name">麦克风</string>
+    <string name="pref_permission_mic_desc">录音的基础权限，系统通话录音和微信通话录音都需要，没有它录音会直接失败</string>
+    <string name="pref_permission_notification_name">通知权限</string>
+    <string name="pref_permission_notification_desc">录音时显示"正在录音"状态通知需要（仅 Android 13 及以上系统需要单独授权）</string>
+    <string name="pref_permission_overlay_name">悬浮窗权限</string>
+    <string name="pref_permission_overlay_desc">系统通话录音球、微信通话录音球都需要，没有它悬浮球无法显示</string>
+    <string name="pref_permission_listener_name">通知使用权</string>
+    <string name="pref_permission_listener_desc">微信通话检测、微信通话自动录音、微信通话录音球都需要，没有它无法感知微信通话的开始和结束</string>
+    <string name="pref_permission_optional_name">通讯录 / 通话记录 / 电话状态</string>
+    <string name="pref_permission_optional_desc">仅用于系统通话录音时补充文件名和来电人信息，不授予也能正常录音</string>
+    <string name="permission_status_granted">已授权</string>
+    <string name="permission_status_not_granted">未授权，点击去开启</string>
     <string name="pref_header_about">关于</string>
     <string name="pref_header_debug">调试</string>
 

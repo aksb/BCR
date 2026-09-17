@@ -39,10 +39,57 @@ object Permissions {
         }
 
     /**
+     * Check if the microphone permission alone has been granted. Needed by every recording path
+     * (system calls and WeChat calls alike) -- without it, WeChatCallCaptureService in particular
+     * currently has no guard at all around its `AudioRecord(...)` construction and will error out
+     * as soon as it's asked to actually record.
+     */
+    fun haveMicrophone(context: Context): Boolean =
+        ContextCompat.checkSelfPermission(
+            context,
+            Manifest.permission.RECORD_AUDIO,
+        ) == PackageManager.PERMISSION_GRANTED
+
+    /**
+     * Check if the notification permission has been granted. Always true below API 33, where
+     * this permission doesn't exist and foreground service notifications don't need it.
+     */
+    fun haveNotifications(context: Context): Boolean =
+        Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU ||
+            ContextCompat.checkSelfPermission(
+                context,
+                Manifest.permission.POST_NOTIFICATIONS,
+            ) == PackageManager.PERMISSION_GRANTED
+
+    /**
+     * Check if all optional permissions (call log, contacts, phone state -- only used to enrich
+     * system call recording filenames/metadata, never required for recording to work at all)
+     * have been granted.
+     */
+    fun haveOptional(context: Context): Boolean =
+        OPTIONAL.all {
+            ContextCompat.checkSelfPermission(context, it) == PackageManager.PERMISSION_GRANTED
+        }
+
+    /**
      * Get intent for opening the app info page in the system settings.
      */
     fun getAppInfoIntent(context: Context) = Intent(
         Settings.ACTION_APPLICATION_DETAILS_SETTINGS,
+        Uri.fromParts("package", context.packageName, null),
+    )
+
+    /**
+     * Check whether this app currently has the "draw over other apps" permission granted, needed
+     * by both the system call recording bubble and the WeChat call recording bubble.
+     */
+    fun haveOverlay(context: Context): Boolean = Settings.canDrawOverlays(context)
+
+    /**
+     * Get intent for opening the system's "draw over other apps" settings screen for this app.
+     */
+    fun getOverlaySettingsIntent(context: Context) = Intent(
+        Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
         Uri.fromParts("package", context.packageName, null),
     )
 

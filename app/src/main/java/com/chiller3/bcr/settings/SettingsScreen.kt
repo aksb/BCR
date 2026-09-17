@@ -5,6 +5,7 @@
 
 package com.chiller3.bcr.settings
 
+import android.Manifest
 import android.content.ActivityNotFoundException
 import android.content.Intent
 import android.content.res.Configuration
@@ -139,6 +140,14 @@ fun SettingsScreen(viewModel: SettingsViewModel = viewModel()) {
         }
         reloadPrefs++
     }
+    val requestWechatPermissions = rememberLauncherForActivityResult(
+        ActivityResultContracts.RequestMultiplePermissions(),
+    ) {
+        // Just refresh -- the switch itself still needs to be tapped again afterwards, which
+        // will then pass this check and move on to whichever check (if any) comes next. See the
+        // full one-tap flow in PermissionsScreen for granting everything at once instead.
+        reloadPrefs++
+    }
 
     AppScreen(
         title = { Text(text = stringResource(R.string.app_name_full)) },
@@ -218,6 +227,9 @@ fun SettingsScreen(viewModel: SettingsViewModel = viewModel()) {
             onRecordRulesSettings = {
                 context.startActivity(Intent(context, RecordRulesActivity::class.java))
             },
+            onPermissionsSettings = {
+                requestSettings.launch(Intent(context, PermissionsActivity::class.java))
+            },
             onOutputDirSettings = {
                 requestSettings.launch(Intent(context, OutputDirectoryActivity::class.java))
             },
@@ -263,38 +275,43 @@ fun SettingsScreen(viewModel: SettingsViewModel = viewModel()) {
                     prefs.floatingButtonEnabled = true
                     reloadPrefs++
                 } else {
-                    requestOverlayPermission.launch(
-                        Intent(
-                            Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
-                            "package:${context.packageName}".toUri(),
-                        )
-                    )
+                    requestOverlayPermission.launch(Permissions.getOverlaySettingsIntent(context))
                 }
             },
             onWechatAutoRecordChange = { enabled ->
-                if (!enabled || Permissions.isNotificationListenerEnabled(context)) {
-                    prefs.wechatAutoRecord = enabled
+                if (!enabled) {
+                    prefs.wechatAutoRecord = false
                     reloadPrefs++
-                } else {
+                } else if (!Permissions.haveMicrophone(context)) {
+                    requestWechatPermissions.launch(arrayOf(Manifest.permission.RECORD_AUDIO))
+                } else if (!Permissions.isNotificationListenerEnabled(context)) {
                     Toast.makeText(
                         context,
                         context.getString(R.string.toast_notification_listener_required),
                         Toast.LENGTH_LONG,
                     ).show()
                     requestSettings.launch(Permissions.getNotificationListenerSettingsIntent())
+                } else {
+                    prefs.wechatAutoRecord = true
+                    reloadPrefs++
                 }
             },
             onWechatFloatingButtonChange = { enabled ->
-                if (!enabled || Permissions.isNotificationListenerEnabled(context)) {
-                    prefs.wechatFloatingButtonEnabled = enabled
+                if (!enabled) {
+                    prefs.wechatFloatingButtonEnabled = false
                     reloadPrefs++
-                } else {
+                } else if (!Permissions.haveMicrophone(context)) {
+                    requestWechatPermissions.launch(arrayOf(Manifest.permission.RECORD_AUDIO))
+                } else if (!Permissions.isNotificationListenerEnabled(context)) {
                     Toast.makeText(
                         context,
                         context.getString(R.string.toast_notification_listener_required),
                         Toast.LENGTH_LONG,
                     ).show()
                     requestSettings.launch(Permissions.getNotificationListenerSettingsIntent())
+                } else {
+                    prefs.wechatFloatingButtonEnabled = true
+                    reloadPrefs++
                 }
             },
             onWechatCallKeywordsChange = { value ->
@@ -362,6 +379,7 @@ private fun SettingsContent(
     forceDirectBoot: Boolean,
     onCallRecordingChange: (Boolean) -> Unit,
     onRecordRulesSettings: () -> Unit,
+    onPermissionsSettings: () -> Unit,
     onOutputDirSettings: () -> Unit,
     onOutputDirOpen: () -> Unit,
     onOutputFormatSettings: () -> Unit,
@@ -394,6 +412,20 @@ private fun SettingsContent(
     val context = LocalContext.current
 
     PreferenceColumn(contentPadding = contentPadding) {
+        item(key = "permissions") {
+            Preference(
+                onClick = onPermissionsSettings,
+                shapes = BetterSegmentedShapes.single(),
+                title = { Text(text = stringResource(R.string.pref_permissions_name)) },
+                summary = { Text(text = stringResource(R.string.pref_permissions_desc)) },
+                modifier = Modifier.animateItem(),
+            )
+        }
+
+        item(key = "permissions_gap") {
+            PreferenceGap(modifier = Modifier.animateItem())
+        }
+
         item(key = "general") {
             PreferenceCategory(
                 title = { Text(text = stringResource(R.string.pref_header_general)) },

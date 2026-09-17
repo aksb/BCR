@@ -171,13 +171,24 @@ class WeChatCallNotificationListenerService : NotificationListenerService() {
             return
         }
 
-        Log.i(TAG, "WeChat call ended: reason=$reason isRecording=$isRecording")
+        // Stopping always follows WeChatCallCaptureService's actual live state, NOT the
+        // locally-cached `isRecording` snapshot above. That snapshot is only ever set here in
+        // onNotificationPosted() (at the moment this call started) or in toggleRecording() (a
+        // bubble tap) -- if recording was instead started *mid-call* via
+        // WeChatRecorderTileService, this class never finds out about it until now, so
+        // `isRecording` would still be a stale `false` and this would silently skip stopping
+        // it, leaving it running indefinitely until manually stopped via the tile. Checking the
+        // real, current WeChatCallCaptureService.isRunning here instead is always correct
+        // regardless of which of the three entry points (tile, bubble, auto-record) started the
+        // recording, or when during the call it happened.
+        val running = WeChatCallCaptureService.isRunning
+        Log.i(TAG, "WeChat call ended: reason=$reason running=$running")
         FloatingButtonService.hide(this)
 
-        if (isRecording) {
+        if (running) {
             stopService(Intent(this, WeChatCallCaptureService::class.java))
-            isRecording = false
         }
+        isRecording = false
 
         activeCallKey = null
     }

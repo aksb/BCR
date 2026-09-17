@@ -1,0 +1,25 @@
+/*
+ * SPDX-FileCopyrightText: 2026 aksb
+ * SPDX-License-Identifier: GPL-3.0-only
+ */
+
+package com.chiller3.bcr.settings
+
+import android.os.Bundle
+import androidx.activity.ComponentActivity
+import androidx.activity.compose.setContent
+import androidx.activity.enableEdgeToEdge
+import com.chiller3.bcr.ui.theme.AppTheme
+
+class PermissionsActivity : ComponentActivity() {
+    override fun onCreate(savedInstanceState: Bundle?) {
+        super.onCreate(savedInstanceState)
+        enableEdgeToEdge()
+
+        setContent {
+            AppTheme {
+                PermissionsScreen(onBack = ::finish)
+            }
+        }
+    }
+}

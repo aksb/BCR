@@ -172,6 +172,10 @@
             android:exported="false" />
 
         <activity
+            android:name=".settings.PermissionsActivity"
+            android:exported="false" />
+
+        <activity
             android:name=".settings.SettingsActivity"
             android:exported="false" />
 
