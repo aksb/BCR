@@ -14,6 +14,9 @@ import android.content.Intent
 import android.media.AudioFormat
 import android.media.AudioRecord
 import android.media.MediaRecorder
+import android.media.audiofx.AcousticEchoCanceler
+import android.media.audiofx.AutomaticGainControl
+import android.media.audiofx.NoiseSuppressor
 import android.os.IBinder
 import android.service.quicksettings.TileService
 import android.util.Log
@@ -74,12 +77,21 @@ class WeChatCallCaptureService : Service() {
         private const val CHANNEL_CONFIG_IN = AudioFormat.CHANNEL_IN_MONO
         private const val AUDIO_FORMAT = AudioFormat.ENCODING_PCM_16BIT
 
+        // See recordLoop()'s diagnostics: samples at or below this are treated as "silence" for
+        // the near-silence-run detector, and a run has to last at least this long to be logged
+        // (short quiet moments between words are completely normal and not worth logging).
+        private const val SILENCE_AMPLITUDE_THRESHOLD = 200
+        private const val SILENCE_LOG_THRESHOLD_MS = 800L
+
         /** Whether a WeChat call recording is currently in progress, regardless of how it was started. */
         var isRunning = false
             private set
     }
 
     private var micRecord: AudioRecord? = null
+    private var echoCanceler: AcousticEchoCanceler? = null
+    private var noiseSuppressor: NoiseSuppressor? = null
+    private var automaticGainControl: AutomaticGainControl? = null
     private val running = AtomicBoolean(false)
     private var micThread: Thread? = null
     private var micBytesWritten = 0L
@@ -145,6 +157,7 @@ class WeChatCallCaptureService : Service() {
             bufferSize,
         )
         micRecord = mic
+        disableAudioEffects(mic.audioSessionId)
 
         val micFile = File(localScratchDir(), "wechat_$timestamp.pcm")
         this.micFile = micFile
@@ -156,21 +169,144 @@ class WeChatCallCaptureService : Service() {
         Log.i(TAG, "Capture started")
     }
 
+    /**
+     * Disables (and, where the platform allows, fully releases) the automatic echo cancellation,
+     * noise suppression, and automatic gain control effects the system may otherwise attach to
+     * this recording session.
+     *
+     * These effects exist to make *voice calls* sound cleaner for the person on the other end --
+     * they suppress anything that resembles the device's own speaker output as "echo" and clamp
+     * down on background noise/level swings. That's exactly the wrong behavior here: this class
+     * captures a WeChat call "through the air" with a plain microphone (see the class doc above
+     * for why -- direct playback capture is rejected by the OS for this use case), so WeChat's
+     * own call audio playing out of the earpiece/speaker while we're trying to record it looks
+     * *exactly* like the "echo" these effects exist to remove. They can end up muting or gating
+     * out the very audio this recording exists to capture, which lines up with reports of
+     * recordings sometimes having no sound at all, or cutting out for a few seconds at a time.
+     * Disabling them here doesn't touch whatever WeChat's own internal call-audio pipeline does
+     * (out of our control), but at least stops our own recording session from doing it a second
+     * time on top of that.
+     */
+    private fun disableAudioEffects(sessionId: Int) {
+        try {
+            if (AcousticEchoCanceler.isAvailable()) {
+                echoCanceler = AcousticEchoCanceler.create(sessionId)?.apply {
+                    enabled = false
+                }
+                Log.i(TAG, "AcousticEchoCanceler disabled for session $sessionId")
+            }
+        } catch (e: Exception) {
+            Log.w(TAG, "Failed to disable AcousticEchoCanceler", e)
+        }
+        try {
+            if (NoiseSuppressor.isAvailable()) {
+                noiseSuppressor = NoiseSuppressor.create(sessionId)?.apply {
+                    enabled = false
+                }
+                Log.i(TAG, "NoiseSuppressor disabled for session $sessionId")
+            }
+        } catch (e: Exception) {
+            Log.w(TAG, "Failed to disable NoiseSuppressor", e)
+        }
+        try {
+            if (AutomaticGainControl.isAvailable()) {
+                automaticGainControl = AutomaticGainControl.create(sessionId)?.apply {
+                    enabled = false
+                }
+                Log.i(TAG, "AutomaticGainControl disabled for session $sessionId")
+            }
+        } catch (e: Exception) {
+            Log.w(TAG, "Failed to disable AutomaticGainControl", e)
+        }
+    }
+
     private fun recordLoop(record: AudioRecord, file: File, onBytes: (Int) -> Unit) {
         val buffer = ByteArray(4096)
+
+        // Diagnostics only -- doesn't change what gets written to the file. Previously read()
+        // return codes <= 0 (errors, or a zero-length read) were silently ignored here, so there
+        // was no way to tell, after the fact, whether a "silent" stretch in a recording was
+        // AudioRecord actually erroring out versus just correctly capturing real silence. This
+        // makes both cases visible in Logcat without spamming a line per read: errors are logged
+        // once when they start and once when they clear, and near-silent audio is only logged as
+        // a single summary line once a run of it has lasted long enough to plausibly be the
+        // "cuts out for a few seconds" symptom rather than just a normal pause in speech.
+        var lastReadWasError = false
+        var silenceRunStartedAtMs = -1L
+        var silenceRunDurationMs = 0L
+
         try {
             FileOutputStream(file).use { out ->
                 while (running.get()) {
                     val read = record.read(buffer, 0, buffer.size)
+
                     if (read > 0) {
+                        if (lastReadWasError) {
+                            Log.w(TAG, "AudioRecord.read() recovered after an error")
+                            lastReadWasError = false
+                        }
+
                         out.write(buffer, 0, read)
                         onBytes(read)
+
+                        val maxAmplitude = maxAbsAmplitude(buffer, read)
+                        // read is a byte count; 2 bytes/sample, mono, at SAMPLE_RATE Hz.
+                        val chunkDurationMs = (read / 2) * 1000L / SAMPLE_RATE
+
+                        if (maxAmplitude <= SILENCE_AMPLITUDE_THRESHOLD) {
+                            if (silenceRunStartedAtMs < 0) {
+                                silenceRunStartedAtMs = System.currentTimeMillis()
+                            }
+                            silenceRunDurationMs += chunkDurationMs
+                        } else if (silenceRunStartedAtMs >= 0) {
+                            if (silenceRunDurationMs >= SILENCE_LOG_THRESHOLD_MS) {
+                                Log.w(
+                                    TAG,
+                                    "Detected ~${silenceRunDurationMs}ms of near-silence " +
+                                        "(max amplitude <= $SILENCE_AMPLITUDE_THRESHOLD) " +
+                                        "before audio resumed",
+                                )
+                            }
+                            silenceRunStartedAtMs = -1
+                            silenceRunDurationMs = 0
+                        }
+                    } else {
+                        if (!lastReadWasError) {
+                            Log.e(TAG, "AudioRecord.read() returned error code $read")
+                            lastReadWasError = true
+                        }
                     }
+                }
+
+                if (silenceRunDurationMs >= SILENCE_LOG_THRESHOLD_MS) {
+                    Log.w(
+                        TAG,
+                        "Recording stopped with an ongoing ~${silenceRunDurationMs}ms " +
+                            "near-silence run",
+                    )
                 }
             }
         } catch (e: Exception) {
             Log.e(TAG, "Error in record loop for ${file.name}", e)
         }
+    }
+
+    /**
+     * Max absolute sample value in a little-endian 16-bit PCM mono buffer, used only to flag
+     * near-silent stretches for [recordLoop]'s diagnostics -- not a real loudness measurement.
+     */
+    private fun maxAbsAmplitude(buffer: ByteArray, length: Int): Int {
+        var max = 0
+        var i = 0
+        while (i + 1 < length) {
+            val sample = ((buffer[i + 1].toInt() shl 8) or (buffer[i].toInt() and 0xFF)).toShort()
+            val abs = kotlin.math.abs(sample.toInt())
+            if (abs > max) {
+                max = abs
+            }
+            i += 2
+        }
+        return max
     }
 
     override fun onDestroy() {
@@ -182,6 +318,13 @@ class WeChatCallCaptureService : Service() {
             release()
         }
         micRecord = null
+
+        echoCanceler?.release()
+        echoCanceler = null
+        noiseSuppressor?.release()
+        noiseSuppressor = null
+        automaticGainControl?.release()
+        automaticGainControl = null
 
         val micWav = micFile?.let { wrapPcmAsWav(it) }
         micFile = null
