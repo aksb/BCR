@@ -83,10 +83,27 @@ class WeChatCallCaptureService : Service() {
         private const val SILENCE_AMPLITUDE_THRESHOLD = 200
         private const val SILENCE_LOG_THRESHOLD_MS = 800L
 
-        // How often recordLoop() logs the loudest sample seen, regardless of the silence
-        // threshold above -- gives a numeric level-over-time curve in Logcat instead of just a
-        // yes/no "was this quiet" summary.
-        private const val LEVEL_LOG_INTERVAL_MS = 1000L
+        // boostQuietAudio() tuning. Window size for measuring loudness; short enough to react
+        // within roughly the length of a syllable, long enough to give a stable RMS reading.
+        private const val BOOST_WINDOW_MS = 150L
+        // Windows at or above this RMS are left completely untouched (gain 1.0) -- this only
+        // ever boosts quiet stretches, never touches audio that's already a normal volume.
+        private const val BOOST_QUIET_RMS_THRESHOLD = 150.0
+        // What a boosted window's RMS is aimed at -- picked from the RMS range (roughly 290-540)
+        // seen in confirmed normal-volume speech during earlier diagnosis of this issue.
+        private const val BOOST_TARGET_RMS = 900.0
+        // Floor used only when computing the gain for a window, so a near-total-silence window
+        // (RMS close to 0) doesn't produce an astronomical gain value -- it still gets capped by
+        // BOOST_MAX_GAIN right after, but this keeps the division itself sane.
+        private const val BOOST_MIN_RMS_FLOOR = 15.0
+        // Hard ceiling on how much any single window can be amplified. A window this quiet is
+        // mostly noise floor to begin with, so amplifying it further than this just produces
+        // loud hiss rather than recovered speech.
+        private const val BOOST_MAX_GAIN = 40.0
+        // How quickly the applied gain chases the target gain, per window (0-1; higher = faster).
+        // Deliberately slow enough that gain doesn't visibly jump window to window ("pumping"),
+        // at BOOST_WINDOW_MS=150ms this gives an adaptation time constant on the order of ~1s.
+        private const val BOOST_SMOOTHING = 0.15
 
         /** Whether a WeChat call recording is currently in progress, regardless of how it was started. */
         var isRunning = false
@@ -154,8 +171,13 @@ class WeChatCallCaptureService : Service() {
             .getMinBufferSize(SAMPLE_RATE, CHANNEL_CONFIG_IN, AUDIO_FORMAT)
             .coerceAtLeast(4096)
 
+        val audioSource = if (Preferences(this).wechatUseVoiceRecognitionSource) {
+            MediaRecorder.AudioSource.VOICE_RECOGNITION
+        } else {
+            MediaRecorder.AudioSource.MIC
+        }
         val mic = AudioRecord(
-            MediaRecorder.AudioSource.MIC,
+            audioSource,
             SAMPLE_RATE,
             CHANNEL_CONFIG_IN,
             AUDIO_FORMAT,
@@ -171,7 +193,15 @@ class WeChatCallCaptureService : Service() {
         }
         mic.startRecording()
 
-        Log.i(TAG, "Capture started")
+        Log.i(
+            TAG,
+            "Capture started (audioSource=" +
+                (if (audioSource == MediaRecorder.AudioSource.VOICE_RECOGNITION) {
+                    "VOICE_RECOGNITION"
+                } else {
+                    "MIC"
+                }) + ")",
+        )
     }
 
     /**
@@ -240,19 +270,6 @@ class WeChatCallCaptureService : Service() {
         var silenceRunStartedAtMs = -1L
         var silenceRunDurationMs = 0L
 
-        // A second, complementary diagnostic: real-world logs showed a several-second stretch of
-        // near-silence right at the start of some calls (the far-end voice was very quiet, not
-        // truly silent, so it didn't always cross SILENCE_AMPLITUDE_THRESHOLD in a way that made
-        // the shape of the recovery obvious). The silence-run summary above only says *that* a
-        // stretch was quiet; this instead logs the actual loudest sample seen roughly once a
-        // second, quiet or not, giving a numeric level-over-time curve -- e.g. "5, 8, 6, 5, 720,
-        // 3100" makes it obvious whether the recovery is a sudden jump (some system audio state
-        // flipping) or a gradual ramp (a fade-in), which the binary silence-run view can't tell
-        // apart.
-        val loopStartedAtMs = System.currentTimeMillis()
-        var levelWindowMaxAmplitude = 0
-        var levelWindowDurationMs = 0L
-
         try {
             FileOutputStream(file).use { out ->
                 while (running.get()) {
@@ -287,22 +304,6 @@ class WeChatCallCaptureService : Service() {
                             }
                             silenceRunStartedAtMs = -1
                             silenceRunDurationMs = 0
-                        }
-
-                        if (maxAmplitude > levelWindowMaxAmplitude) {
-                            levelWindowMaxAmplitude = maxAmplitude
-                        }
-                        levelWindowDurationMs += chunkDurationMs
-                        if (levelWindowDurationMs >= LEVEL_LOG_INTERVAL_MS) {
-                            val elapsedSec =
-                                (System.currentTimeMillis() - loopStartedAtMs) / 1000.0
-                            Log.i(
-                                TAG,
-                                "level t=${"%.1f".format(elapsedSec)}s " +
-                                    "max=$levelWindowMaxAmplitude",
-                            )
-                            levelWindowMaxAmplitude = 0
-                            levelWindowDurationMs = 0
                         }
                     } else {
                         if (!lastReadWasError) {
@@ -422,7 +423,10 @@ class WeChatCallCaptureService : Service() {
 
         val wavFile = File(pcmFile.parentFile, pcmFile.nameWithoutExtension + ".wav")
         return try {
-            val pcmData = pcmFile.readBytes()
+            var pcmData = pcmFile.readBytes()
+            if (Preferences(this).wechatBoostQuietAudio) {
+                pcmData = boostQuietAudio(pcmData)
+            }
             FileOutputStream(wavFile).use { out ->
                 out.write(buildWavHeader(pcmData.size))
                 out.write(pcmData)
@@ -433,6 +437,91 @@ class WeChatCallCaptureService : Service() {
             Log.e(TAG, "Failed to wrap ${pcmFile.name} as WAV", e)
             null
         }
+    }
+
+    /**
+     * Post-processing gain-boost, applied once over the whole recording after capture stops (see
+     * [wrapPcmAsWav], guarded by Preferences.wechatBoostQuietAudio -- off by default).
+     *
+     * This is a blunt fallback, not a real fix -- see the class doc and BOOST_* constants above
+     * for the full reasoning. In short: measure loudness in short windows, and where a window is
+     * much quieter than normal speech, amplify it back up -- "good enough to make out", not a
+     * clean recovery, since background noise in that window gets amplified right along with it.
+     * Three things keep this from making a quiet recording worse instead of better:
+     *  - BOOST_MAX_GAIN caps how hard a near-silent window gets boosted, so a window that's
+     *    already essentially empty becomes loud hiss rather than being pushed all the way up to
+     *    a normal volume -- there's no real speech there to recover past a certain point.
+     *  - The gain applied is smoothed across windows (see BOOST_SMOOTHING) and ramped linearly
+     *    sample-by-sample within each window, rather than snapping from one window's gain to the
+     *    next, so volume doesn't audibly "pump" up and down.
+     *  - Every sample is clamped back into the valid 16-bit range after scaling (a limiter), so
+     *    a boosted loud passage can never wrap around into a harsh digital pop.
+     * Genuinely silent stretches (nothing captured at all, not even faint audio) have nothing in
+     * them to amplify and stay silent either way -- this can't recover audio that was never
+     * there to begin with.
+     */
+    private fun boostQuietAudio(pcmData: ByteArray): ByteArray {
+        val sampleCount = pcmData.size / 2
+        if (sampleCount == 0) {
+            return pcmData
+        }
+
+        val input = ByteBuffer.wrap(pcmData).order(ByteOrder.LITTLE_ENDIAN)
+        val samples = ShortArray(sampleCount) { input.short }
+
+        val windowSize = (SAMPLE_RATE * BOOST_WINDOW_MS / 1000).toInt().coerceAtLeast(1)
+        val windowCount = (sampleCount + windowSize - 1) / windowSize
+
+        // Pass 1: the gain each window would need on its own, ignoring its neighbors.
+        val targetGains = DoubleArray(windowCount)
+        for (w in 0 until windowCount) {
+            val start = w * windowSize
+            val end = (start + windowSize).coerceAtMost(sampleCount)
+            var sumSquares = 0.0
+            for (i in start until end) {
+                val v = samples[i].toDouble()
+                sumSquares += v * v
+            }
+            val rms = kotlin.math.sqrt(sumSquares / (end - start))
+            targetGains[w] = if (rms >= BOOST_QUIET_RMS_THRESHOLD) {
+                1.0
+            } else {
+                (BOOST_TARGET_RMS / rms.coerceAtLeast(BOOST_MIN_RMS_FLOOR))
+                    .coerceIn(1.0, BOOST_MAX_GAIN)
+            }
+        }
+
+        // Pass 2: smooth those targets across windows so the gain actually applied doesn't jump
+        // abruptly -- each window's applied gain only moves partway toward its own target.
+        val smoothedGains = DoubleArray(windowCount)
+        var smoothed = 1.0
+        for (w in 0 until windowCount) {
+            smoothed += (targetGains[w] - smoothed) * BOOST_SMOOTHING
+            smoothedGains[w] = smoothed
+        }
+
+        // Pass 3: apply gain sample-by-sample, ramping linearly from the previous window's gain
+        // to this window's gain across the window (so there's no audible step even at window
+        // boundaries), then clamp every scaled sample back into the valid 16-bit range.
+        val output = ByteArray(pcmData.size)
+        val out = ByteBuffer.wrap(output).order(ByteOrder.LITTLE_ENDIAN)
+        var prevGain = 1.0
+        for (w in 0 until windowCount) {
+            val start = w * windowSize
+            val end = (start + windowSize).coerceAtMost(sampleCount)
+            val windowGain = smoothedGains[w]
+            val span = (end - start).coerceAtLeast(1)
+            for (i in start until end) {
+                val progress = (i - start).toDouble() / span
+                val gain = prevGain + (windowGain - prevGain) * progress
+                val boosted = (samples[i] * gain)
+                    .coerceIn(Short.MIN_VALUE.toDouble(), Short.MAX_VALUE.toDouble())
+                out.putShort(boosted.toInt().toShort())
+            }
+            prevGain = windowGain
+        }
+
+        return output
     }
 
     private fun buildWavHeader(dataSize: Int): ByteArray {

@@ -98,6 +98,9 @@ fun SettingsScreen(viewModel: SettingsViewModel = viewModel()) {
     val wechatAutoRecord = remember(reloadPrefs) { prefs.wechatAutoRecord }
     val wechatFloatingButtonEnabled = remember(reloadPrefs) { prefs.wechatFloatingButtonEnabled }
     val wechatCallKeywords = remember(reloadPrefs) { prefs.wechatCallKeywords }
+    val wechatUseVoiceRecognitionSource =
+        remember(reloadPrefs) { prefs.wechatUseVoiceRecognitionSource }
+    val wechatBoostQuietAudio = remember(reloadPrefs) { prefs.wechatBoostQuietAudio }
     val isDebugMode = remember(reloadPrefs) { prefs.isDebugMode }
     val forceDirectBoot = remember(reloadPrefs) { prefs.forceDirectBoot }
 
@@ -213,6 +216,8 @@ fun SettingsScreen(viewModel: SettingsViewModel = viewModel()) {
             wechatAutoRecord = wechatAutoRecord,
             wechatFloatingButtonEnabled = wechatFloatingButtonEnabled,
             wechatCallKeywords = wechatCallKeywords,
+            wechatUseVoiceRecognitionSource = wechatUseVoiceRecognitionSource,
+            wechatBoostQuietAudio = wechatBoostQuietAudio,
             isDebugMode = isDebugMode,
             forceDirectBoot = forceDirectBoot,
             onCallRecordingChange = { enabled ->
@@ -318,6 +323,14 @@ fun SettingsScreen(viewModel: SettingsViewModel = viewModel()) {
                 prefs.wechatCallKeywords = value
                 reloadPrefs++
             },
+            onWechatUseVoiceRecognitionSourceChange = { enabled ->
+                prefs.wechatUseVoiceRecognitionSource = enabled
+                reloadPrefs++
+            },
+            onWechatBoostQuietAudioChange = { enabled ->
+                prefs.wechatBoostQuietAudio = enabled
+                reloadPrefs++
+            },
             onBackupSettings = {
                 requestSafBackup.launch("bcr_settings_backup.json")
             },
@@ -375,6 +388,8 @@ private fun SettingsContent(
     wechatAutoRecord: Boolean,
     wechatFloatingButtonEnabled: Boolean,
     wechatCallKeywords: String,
+    wechatUseVoiceRecognitionSource: Boolean,
+    wechatBoostQuietAudio: Boolean,
     isDebugMode: Boolean,
     forceDirectBoot: Boolean,
     onCallRecordingChange: (Boolean) -> Unit,
@@ -393,6 +408,8 @@ private fun SettingsContent(
     onWechatAutoRecordChange: (Boolean) -> Unit,
     onWechatFloatingButtonChange: (Boolean) -> Unit,
     onWechatCallKeywordsChange: (String) -> Unit,
+    onWechatUseVoiceRecognitionSourceChange: (Boolean) -> Unit,
+    onWechatBoostQuietAudioChange: (Boolean) -> Unit,
     onBackupSettings: () -> Unit,
     onRestoreSettings: () -> Unit,
     onDebugModeChange: (Boolean) -> Unit,
@@ -554,7 +571,7 @@ private fun SettingsContent(
         item(key = "wechat_call_keywords") {
             Preference(
                 onClick = { showWechatCallKeywordsDialog = true },
-                shapes = BetterSegmentedShapes.bottom(),
+                shapes = BetterSegmentedShapes.middle(),
                 title = {
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Text(text = stringResource(R.string.pref_wechat_call_keywords_name))
@@ -576,6 +593,36 @@ private fun SettingsContent(
                     }
                 },
                 summary = { Text(text = wechatCallKeywords) },
+                modifier = Modifier.animateItem(),
+            )
+        }
+
+        item(key = "wechat_voice_recognition_source") {
+            SwitchPreference(
+                checked = wechatUseVoiceRecognitionSource,
+                onCheckedChange = onWechatUseVoiceRecognitionSourceChange,
+                shapes = BetterSegmentedShapes.middle(),
+                title = {
+                    Text(text = stringResource(R.string.pref_wechat_voice_recognition_source_name))
+                },
+                summary = {
+                    Text(text = stringResource(R.string.pref_wechat_voice_recognition_source_desc))
+                },
+                modifier = Modifier.animateItem(),
+            )
+        }
+
+        item(key = "wechat_boost_quiet_audio") {
+            SwitchPreference(
+                checked = wechatBoostQuietAudio,
+                onCheckedChange = onWechatBoostQuietAudioChange,
+                shapes = BetterSegmentedShapes.bottom(),
+                title = {
+                    Text(text = stringResource(R.string.pref_wechat_boost_quiet_audio_name))
+                },
+                summary = {
+                    Text(text = stringResource(R.string.pref_wechat_boost_quiet_audio_desc))
+                },
                 modifier = Modifier.animateItem(),
             )
         }
@@ -1031,6 +1078,8 @@ private fun PreviewSettingsScreen() {
                 wechatAutoRecord = false,
                 wechatFloatingButtonEnabled = true,
                 wechatCallKeywords = "语音通话中,视频通话中",
+                wechatUseVoiceRecognitionSource = false,
+                wechatBoostQuietAudio = false,
                 isDebugMode = true,
                 forceDirectBoot = false,
                 onCallRecordingChange = {},
@@ -1049,6 +1098,8 @@ private fun PreviewSettingsScreen() {
                 onWechatAutoRecordChange = {},
                 onWechatFloatingButtonChange = {},
                 onWechatCallKeywordsChange = {},
+                onWechatUseVoiceRecognitionSourceChange = {},
+                onWechatBoostQuietAudioChange = {},
                 onBackupSettings = {},
                 onRestoreSettings = {},
                 onDebugModeChange = {},

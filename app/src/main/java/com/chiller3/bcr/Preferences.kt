@@ -60,6 +60,9 @@ class Preferences(initialContext: Context) {
         private const val PREF_WECHAT_AUTO_RECORD = "wechat_auto_record"
         private const val PREF_WECHAT_FLOATING_BUTTON = "wechat_floating_button_enabled"
         private const val PREF_WECHAT_CALL_KEYWORDS = "wechat_call_keywords"
+        private const val PREF_WECHAT_USE_VOICE_RECOGNITION_SOURCE =
+            "wechat_use_voice_recognition_source"
+        private const val PREF_WECHAT_BOOST_QUIET_AUDIO = "wechat_boost_quiet_audio"
 
         /**
          * Default keywords matched (as a substring, case-sensitively) against WeChat's ongoing
@@ -457,6 +460,36 @@ class Preferences(initialContext: Context) {
     var wechatFloatingButtonEnabled: Boolean
         get() = prefs.getBoolean(PREF_WECHAT_FLOATING_BUTTON, true)
         set(enabled) = prefs.edit { putBoolean(PREF_WECHAT_FLOATING_BUTTON, enabled) }
+
+    /**
+     * Experimental A/B switch for WeChatCallCaptureService's audio source: off (the default)
+     * uses MediaRecorder.AudioSource.MIC as before; on switches to
+     * MediaRecorder.AudioSource.VOICE_RECOGNITION, which Android documents as asking the HAL to
+     * apply less automatic processing than MIC does. Added to let the user directly compare the
+     * two on their own device after diagnosing that the far-end voice sometimes comes through
+     * severely attenuated for the first few seconds of a WeChat call -- unlikely to fully fix it
+     * (the evidence points to something in WeChat's own call-audio pipeline, outside this app's
+     * reach either way), but cheap to let the user try since it's just a different constant
+     * passed into the same AudioRecord constructor.
+     */
+    var wechatUseVoiceRecognitionSource: Boolean
+        get() = prefs.getBoolean(PREF_WECHAT_USE_VOICE_RECOGNITION_SOURCE, false)
+        set(enabled) = prefs.edit { putBoolean(PREF_WECHAT_USE_VOICE_RECOGNITION_SOURCE, enabled) }
+
+    /**
+     * Off by default. When on, WeChatCallCaptureService.wrapPcmAsWav runs a post-processing
+     * gain-boost pass over the whole recording after capture stops: quiet stretches get
+     * amplified back up toward a normal speech level, loud stretches are left alone, gain
+     * changes are smoothed across time so volume doesn't visibly "pump", and every sample is
+     * clamped back into the valid 16-bit range afterward so a boosted passage can never clip
+     * into a harsh pop. Doesn't fix the underlying cause (still believed to be WeChat's own
+     * call-audio pipeline, not something this app can reach) and can't recover audio from a
+     * stretch that was truly never captured in the first place -- it just makes an already
+     * "there but very quiet" stretch loud enough to make out, background noise included.
+     */
+    var wechatBoostQuietAudio: Boolean
+        get() = prefs.getBoolean(PREF_WECHAT_BOOST_QUIET_AUDIO, false)
+        set(enabled) = prefs.edit { putBoolean(PREF_WECHAT_BOOST_QUIET_AUDIO, enabled) }
 
     /**
      * Comma-separated keywords matched (as a substring) against WeChat's ongoing call
