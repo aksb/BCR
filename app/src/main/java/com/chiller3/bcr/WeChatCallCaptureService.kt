@@ -83,6 +83,11 @@ class WeChatCallCaptureService : Service() {
         private const val SILENCE_AMPLITUDE_THRESHOLD = 200
         private const val SILENCE_LOG_THRESHOLD_MS = 800L
 
+        // How often recordLoop() logs the loudest sample seen, regardless of the silence
+        // threshold above -- gives a numeric level-over-time curve in Logcat instead of just a
+        // yes/no "was this quiet" summary.
+        private const val LEVEL_LOG_INTERVAL_MS = 1000L
+
         /** Whether a WeChat call recording is currently in progress, regardless of how it was started. */
         var isRunning = false
             private set
@@ -235,6 +240,19 @@ class WeChatCallCaptureService : Service() {
         var silenceRunStartedAtMs = -1L
         var silenceRunDurationMs = 0L
 
+        // A second, complementary diagnostic: real-world logs showed a several-second stretch of
+        // near-silence right at the start of some calls (the far-end voice was very quiet, not
+        // truly silent, so it didn't always cross SILENCE_AMPLITUDE_THRESHOLD in a way that made
+        // the shape of the recovery obvious). The silence-run summary above only says *that* a
+        // stretch was quiet; this instead logs the actual loudest sample seen roughly once a
+        // second, quiet or not, giving a numeric level-over-time curve -- e.g. "5, 8, 6, 5, 720,
+        // 3100" makes it obvious whether the recovery is a sudden jump (some system audio state
+        // flipping) or a gradual ramp (a fade-in), which the binary silence-run view can't tell
+        // apart.
+        val loopStartedAtMs = System.currentTimeMillis()
+        var levelWindowMaxAmplitude = 0
+        var levelWindowDurationMs = 0L
+
         try {
             FileOutputStream(file).use { out ->
                 while (running.get()) {
@@ -269,6 +287,22 @@ class WeChatCallCaptureService : Service() {
                             }
                             silenceRunStartedAtMs = -1
                             silenceRunDurationMs = 0
+                        }
+
+                        if (maxAmplitude > levelWindowMaxAmplitude) {
+                            levelWindowMaxAmplitude = maxAmplitude
+                        }
+                        levelWindowDurationMs += chunkDurationMs
+                        if (levelWindowDurationMs >= LEVEL_LOG_INTERVAL_MS) {
+                            val elapsedSec =
+                                (System.currentTimeMillis() - loopStartedAtMs) / 1000.0
+                            Log.i(
+                                TAG,
+                                "level t=${"%.1f".format(elapsedSec)}s " +
+                                    "max=$levelWindowMaxAmplitude",
+                            )
+                            levelWindowMaxAmplitude = 0
+                            levelWindowDurationMs = 0
                         }
                     } else {
                         if (!lastReadWasError) {
