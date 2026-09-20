@@ -424,6 +424,8 @@ private fun SettingsContent(
     var showWechatAutoRecordHelp by rememberSaveable { mutableStateOf(false) }
     var showWechatFloatingButtonHelp by rememberSaveable { mutableStateOf(false) }
     var showWechatCallKeywordsHelp by rememberSaveable { mutableStateOf(false) }
+    var showWechatVoiceRecognitionSourceHelp by rememberSaveable { mutableStateOf(false) }
+    var showWechatBoostQuietAudioHelp by rememberSaveable { mutableStateOf(false) }
     var showWechatCallKeywordsDialog by rememberSaveable { mutableStateOf(false) }
     var showModInfoDialog by rememberSaveable { mutableStateOf(false) }
     val context = LocalContext.current
@@ -469,7 +471,10 @@ private fun SettingsContent(
                 shapes = BetterSegmentedShapes.middle(),
                 title = {
                     Row(verticalAlignment = Alignment.CenterVertically) {
-                        Text(text = stringResource(R.string.pref_floating_button_name))
+                        Text(
+                            text = stringResource(R.string.pref_floating_button_name),
+                            modifier = Modifier.weight(1f),
+                        )
                         val helpDescription =
                             stringResource(R.string.pref_floating_button_help_content_description)
                         IconButton(
@@ -513,7 +518,10 @@ private fun SettingsContent(
                 shapes = BetterSegmentedShapes.top(),
                 title = {
                     Row(verticalAlignment = Alignment.CenterVertically) {
-                        Text(text = stringResource(R.string.pref_wechat_auto_record_name))
+                        Text(
+                            text = stringResource(R.string.pref_wechat_auto_record_name),
+                            modifier = Modifier.weight(1f),
+                        )
                         val helpDescription = stringResource(
                             R.string.pref_wechat_auto_record_help_content_description,
                         )
@@ -543,7 +551,10 @@ private fun SettingsContent(
                 shapes = BetterSegmentedShapes.middle(),
                 title = {
                     Row(verticalAlignment = Alignment.CenterVertically) {
-                        Text(text = stringResource(R.string.pref_wechat_floating_button_name))
+                        Text(
+                            text = stringResource(R.string.pref_wechat_floating_button_name),
+                            modifier = Modifier.weight(1f),
+                        )
                         val helpDescription = stringResource(
                             R.string.pref_wechat_floating_button_help_content_description,
                         )
@@ -574,7 +585,10 @@ private fun SettingsContent(
                 shapes = BetterSegmentedShapes.middle(),
                 title = {
                     Row(verticalAlignment = Alignment.CenterVertically) {
-                        Text(text = stringResource(R.string.pref_wechat_call_keywords_name))
+                        Text(
+                            text = stringResource(R.string.pref_wechat_call_keywords_name),
+                            modifier = Modifier.weight(1f),
+                        )
                         val helpDescription = stringResource(
                             R.string.pref_wechat_call_keywords_help_content_description,
                         )
@@ -603,7 +617,29 @@ private fun SettingsContent(
                 onCheckedChange = onWechatUseVoiceRecognitionSourceChange,
                 shapes = BetterSegmentedShapes.middle(),
                 title = {
-                    Text(text = stringResource(R.string.pref_wechat_voice_recognition_source_name))
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text(
+                            text = stringResource(
+                                R.string.pref_wechat_voice_recognition_source_name,
+                            ),
+                            modifier = Modifier.weight(1f),
+                        )
+                        val helpDescription = stringResource(
+                            R.string.pref_wechat_voice_recognition_source_help_content_description,
+                        )
+                        IconButton(
+                            onClick = { showWechatVoiceRecognitionSourceHelp = true },
+                            modifier = Modifier
+                                .size(32.dp)
+                                .clearAndSetSemantics { contentDescription = helpDescription },
+                        ) {
+                            Text(
+                                text = "\u24D8", // ⓘ
+                                color = MaterialTheme.colorScheme.primary,
+                                style = MaterialTheme.typography.titleMedium,
+                            )
+                        }
+                    }
                 },
                 summary = {
                     Text(text = stringResource(R.string.pref_wechat_voice_recognition_source_desc))
@@ -618,7 +654,27 @@ private fun SettingsContent(
                 onCheckedChange = onWechatBoostQuietAudioChange,
                 shapes = BetterSegmentedShapes.bottom(),
                 title = {
-                    Text(text = stringResource(R.string.pref_wechat_boost_quiet_audio_name))
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text(
+                            text = stringResource(R.string.pref_wechat_boost_quiet_audio_name),
+                            modifier = Modifier.weight(1f),
+                        )
+                        val helpDescription = stringResource(
+                            R.string.pref_wechat_boost_quiet_audio_help_content_description,
+                        )
+                        IconButton(
+                            onClick = { showWechatBoostQuietAudioHelp = true },
+                            modifier = Modifier
+                                .size(32.dp)
+                                .clearAndSetSemantics { contentDescription = helpDescription },
+                        ) {
+                            Text(
+                                text = "\u24D8", // ⓘ
+                                color = MaterialTheme.colorScheme.primary,
+                                style = MaterialTheme.typography.titleMedium,
+                            )
+                        }
+                    }
                 },
                 summary = {
                     Text(text = stringResource(R.string.pref_wechat_boost_quiet_audio_desc))
@@ -923,6 +979,54 @@ private fun SettingsContent(
             onDismissRequest = { showWechatCallKeywordsHelp = false },
             confirmButton = {
                 TextButton(onClick = { showWechatCallKeywordsHelp = false }) {
+                    Text(text = stringResource(android.R.string.ok))
+                }
+            },
+        )
+    }
+
+    if (showWechatVoiceRecognitionSourceHelp) {
+        AlertDialog(
+            title = {
+                Text(
+                    text = stringResource(
+                        R.string.pref_wechat_voice_recognition_source_help_title,
+                    ),
+                )
+            },
+            text = {
+                Text(
+                    text = stringResource(
+                        R.string.pref_wechat_voice_recognition_source_help_body,
+                    ),
+                    modifier = Modifier
+                        .verticalScroll(state = rememberScrollState())
+                        .padding(top = 8.dp),
+                )
+            },
+            onDismissRequest = { showWechatVoiceRecognitionSourceHelp = false },
+            confirmButton = {
+                TextButton(onClick = { showWechatVoiceRecognitionSourceHelp = false }) {
+                    Text(text = stringResource(android.R.string.ok))
+                }
+            },
+        )
+    }
+
+    if (showWechatBoostQuietAudioHelp) {
+        AlertDialog(
+            title = { Text(text = stringResource(R.string.pref_wechat_boost_quiet_audio_help_title)) },
+            text = {
+                Text(
+                    text = stringResource(R.string.pref_wechat_boost_quiet_audio_help_body),
+                    modifier = Modifier
+                        .verticalScroll(state = rememberScrollState())
+                        .padding(top = 8.dp),
+                )
+            },
+            onDismissRequest = { showWechatBoostQuietAudioHelp = false },
+            confirmButton = {
+                TextButton(onClick = { showWechatBoostQuietAudioHelp = false }) {
                     Text(text = stringResource(android.R.string.ok))
                 }
             },
