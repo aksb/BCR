@@ -2,8 +2,8 @@
 
 [English](README.md) | [中文](README.zh-CN.md)
 
-> **Note**: This repo is a fork of [chenxiaolong/BCR](https://github.com/chenxiaolong/BCR), modified
-> from its source to add an "in-call screen recording button", so recording can be started/paused
+> **Note**: This repo is based on the source code of [chenxiaolong/BCR](https://github.com/chenxiaolong/BCR), modified
+> to add an "in-call screen recording button", so recording can be started/paused
 > quickly even when the lock screen makes it hard to pull down the notification shade.
 > Added "Settings backup and restore" feature for quickly importing settings after flashing or switching devices.
 > Last modified: 2026-09.

@@ -2,7 +2,7 @@
 
 [English](README.md) | [中文](README.zh-CN.md)
 
-> **说明**：本仓库 fork 自 [chenxiaolong/BCR](https://github.com/chenxiaolong/BCR)，基于其源码修改，
+> **说明**：本仓库基于 [chenxiaolong/BCR](https://github.com/chenxiaolong/BCR) 的源码修改，
 > 新增了「来电界面录音按钮」功能，方便锁屏状态下无法下拉通知栏时快速开始/暂停录音。
 > 新增了「备份和恢复设置」功能，方便刷机/换新机后快速导入设置。
 > 本次修改日期：2026-09。
