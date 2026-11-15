@@ -1,0 +1,67 @@
+/*
+ * SPDX-FileCopyrightText: 2022 Andrew Gunnerson
+ * SPDX-License-Identifier: GPL-3.0-only
+ */
+
+package com.chiller3.bcr.format
+
+import android.media.MediaCodec
+import android.media.MediaFormat
+import java.nio.ByteBuffer
+
+/**
+ * Abstract class for writing encoded samples to a container format.
+ */
+interface Container {
+    /**
+     * Start the muxer process.
+     *
+     * Must be called before [writeSamples].
+     */
+    fun start()
+
+    /**
+     * Stop the muxer process.
+     *
+     * Must not be called if [start] did not complete successfully.
+     */
+    fun stop()
+
+    /**
+     * Free resources used by the muxer process.
+     *
+     * Can be called in any state. If the muxer process is started, it will be stopped.
+     */
+    fun release()
+
+    /**
+     * Add a track to the container with the specified format.
+     *
+     * Must not be called after the muxer process is started.
+     *
+     * @param mediaFormat Must be the instance returned by [MediaCodec.getOutputFormat]
+     */
+    fun addTrack(mediaFormat: MediaFormat): Int
+
+    /**
+     * Write encoded samples to the output container.
+     *
+     * Must not be called unless the muxer process is started.
+     *
+     * @param trackIndex Must be an index returned by [addTrack]
+     */
+    fun writeSamples(trackIndex: Int, byteBuffer: ByteBuffer, bufferInfo: MediaCodec.BufferInfo)
+}
+
+/**
+ * Optional hook for containers that need metadata derived from the raw PCM input.
+ */
+interface InputSampleConsumer {
+    /**
+     * Consume the same PCM bytes that are submitted to the encoder.
+     *
+     * The buffer's position and limit bound the bytes to consume. Implementations may change this
+     * buffer's position.
+     */
+    fun consumeInputSamples(byteBuffer: ByteBuffer, frameSize: Int)
+}

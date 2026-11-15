@@ -1,0 +1,801 @@
+/*
+ * SPDX-FileCopyrightText: 2022-2026 Andrew Gunnerson
+ * SPDX-License-Identifier: GPL-3.0-only
+ */
+
+package com.chiller3.bcr.settings
+
+import android.content.ActivityNotFoundException
+import android.content.Intent
+import android.content.res.Configuration
+import android.net.Uri
+import android.provider.DocumentsContract
+import android.provider.Settings
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
+import androidx.compose.material3.IconButton
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalResources
+import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.clearAndSetSemantics
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.tooling.preview.Preview
+import androidx.compose.ui.unit.dp
+import androidx.core.net.toUri
+import androidx.lifecycle.compose.LocalLifecycleOwner
+import androidx.lifecycle.viewmodel.compose.viewModel
+import com.chiller3.bcr.BuildConfig
+import com.chiller3.bcr.DirectBootMigrationService
+import com.chiller3.bcr.Logcat
+import com.chiller3.bcr.Permissions
+import com.chiller3.bcr.Preferences
+import com.chiller3.bcr.R
+import com.chiller3.bcr.extension.DOCUMENTSUI_AUTHORITY
+import com.chiller3.bcr.extension.formattedString
+import com.chiller3.bcr.format.AudioSource
+import com.chiller3.bcr.format.Format
+import com.chiller3.bcr.format.NoParamInfo
+import com.chiller3.bcr.format.RangedParamInfo
+import com.chiller3.bcr.output.DaysRetention
+import com.chiller3.bcr.output.Retention
+import com.chiller3.bcr.rule.RecordRulesActivity
+import com.chiller3.bcr.ui.AppScreen
+import com.chiller3.bcr.ui.BetterSegmentedShapes
+import com.chiller3.bcr.ui.Preference
+import com.chiller3.bcr.ui.PreferenceCategory
+import com.chiller3.bcr.ui.PreferenceColumn
+import com.chiller3.bcr.ui.PreferenceGap
+import com.chiller3.bcr.ui.PreferencesChangedEffect
+import com.chiller3.bcr.ui.SwitchPreference
+import com.chiller3.bcr.ui.theme.AppTheme
+
+@Composable
+fun SettingsScreen(viewModel: SettingsViewModel = viewModel()) {
+    val context = LocalContext.current
+    val resources = LocalResources.current
+
+    val prefs = remember { Preferences(context) }
+    var reloadPrefs by remember { mutableIntStateOf(0) }
+    val callRecording = remember(reloadPrefs) {
+        prefs.isCallRecordingEnabled && Permissions.haveRequired(context)
+    }
+    val outputDir = remember(reloadPrefs) { prefs.outputDirOrDefault }
+    val retention = remember(reloadPrefs) { Retention.fromPreferences(prefs) }
+    val savedFormat = remember(reloadPrefs) { Format.fromPreferences(prefs) }
+    val minDuration = remember(reloadPrefs) { prefs.minDuration }
+    val writeMetadata = remember(reloadPrefs) { prefs.writeMetadata }
+    val recordTelecomApps = remember(reloadPrefs) { prefs.recordTelecomApps }
+    val recordDialingState = remember(reloadPrefs) { prefs.recordDialingState }
+    val notificationOpenDir = remember(reloadPrefs) { prefs.notificationOpenDir }
+    val showLauncherIcon = remember(reloadPrefs) { prefs.showLauncherIcon }
+    val floatingButtonEnabled = remember(reloadPrefs) { prefs.floatingButtonEnabled }
+    val isDebugMode = remember(reloadPrefs) { prefs.isDebugMode }
+    val forceDirectBoot = remember(reloadPrefs) { prefs.forceDirectBoot }
+
+    val requestPermissionRequired = rememberLauncherForActivityResult(
+        ActivityResultContracts.RequestMultiplePermissions(),
+    ) { granted ->
+        // Call recording can still be enabled if optional permissions were not granted.
+        if (granted.all { it.key !in Permissions.REQUIRED || it.value }) {
+            prefs.isCallRecordingEnabled = true
+            reloadPrefs++
+        } else {
+            context.startActivity(Permissions.getAppInfoIntent(context))
+        }
+    }
+    val requestSettings = rememberLauncherForActivityResult(
+        ActivityResultContracts.StartActivityForResult(),
+    ) {
+        reloadPrefs++
+    }
+    val requestSafSaveLogs = rememberLauncherForActivityResult(
+        ActivityResultContracts.CreateDocument(Logcat.MIMETYPE),
+    ) { uri ->
+        uri?.let { viewModel.saveLogs(it) }
+    }
+    val requestSafBackup = rememberLauncherForActivityResult(
+        ActivityResultContracts.CreateDocument("application/json"),
+    ) { uri ->
+        uri?.let { viewModel.backupSettings(context, it) }
+    }
+    val requestSafRestore = rememberLauncherForActivityResult(
+        ActivityResultContracts.OpenDocument(),
+    ) { uri ->
+        uri?.let { viewModel.restoreSettings(context, it) { reloadPrefs++ } }
+    }
+    val requestOverlayPermission = rememberLauncherForActivityResult(
+        ActivityResultContracts.StartActivityForResult(),
+    ) {
+        if (Settings.canDrawOverlays(context)) {
+            prefs.floatingButtonEnabled = true
+        }
+        reloadPrefs++
+    }
+
+    AppScreen(
+        title = { Text(text = stringResource(R.string.app_name_full)) },
+    ) { params ->
+        LaunchedEffect(Unit) {
+            viewModel.alerts.collect { alerts ->
+                val alert = alerts.firstOrNull() ?: return@collect
+                val msg = when (alert) {
+                    is SettingsAlert.LogcatSucceeded -> resources.getString(
+                        R.string.alert_logcat_success,
+                        alert.uri.formattedString,
+                    )
+                    is SettingsAlert.LogcatFailed -> resources.getString(
+                        R.string.alert_logcat_failure,
+                        alert.uri.formattedString,
+                        alert.error,
+                    )
+                    is SettingsAlert.BackupSucceeded -> resources.getString(
+                        R.string.alert_backup_success,
+                        alert.uri.formattedString,
+                    )
+                    is SettingsAlert.BackupFailed -> resources.getString(
+                        R.string.alert_backup_failure,
+                        alert.uri.formattedString,
+                        alert.error,
+                    )
+                    is SettingsAlert.RestoreSucceeded -> resources.getString(
+                        R.string.alert_restore_success,
+                        alert.uri.formattedString,
+                    )
+                    is SettingsAlert.RestoreSucceededOutputDirNeedsReselect -> resources.getString(
+                        R.string.alert_restore_success_output_dir_needs_reselect,
+                        alert.uri.formattedString,
+                    )
+                    is SettingsAlert.RestoreFailed -> resources.getString(
+                        R.string.alert_restore_failure,
+                        alert.uri.formattedString,
+                        alert.error,
+                    )
+                    SettingsAlert.BrowserNotFound -> resources.getString(R.string.browser_not_found)
+                    SettingsAlert.DocumentsUINotFound -> resources.getString(
+                        R.string.documentsui_not_found,
+                    )
+                }
+
+                params.snackbarHostState.showSnackbar(message = msg, withDismissAction = true)
+                viewModel.acknowledgeFirstAlert()
+            }
+        }
+
+        SettingsContent(
+            callRecording = callRecording,
+            outputDir = outputDir,
+            retention = retention,
+            savedFormat = savedFormat,
+            minDuration = minDuration,
+            writeMetadata = writeMetadata,
+            recordTelecomApps = recordTelecomApps,
+            recordDialingState = recordDialingState,
+            notificationOpenDir = notificationOpenDir,
+            showLauncherIcon = showLauncherIcon,
+            floatingButtonEnabled = floatingButtonEnabled,
+            isDebugMode = isDebugMode,
+            forceDirectBoot = forceDirectBoot,
+            onCallRecordingChange = { enabled ->
+                if (!enabled || Permissions.haveRequired(context)) {
+                    prefs.isCallRecordingEnabled = enabled
+                    reloadPrefs++
+                } else {
+                    // Ask for optional permissions the first time only.
+                    requestPermissionRequired.launch(Permissions.REQUIRED + Permissions.OPTIONAL)
+                }
+            },
+            onRecordRulesSettings = {
+                context.startActivity(Intent(context, RecordRulesActivity::class.java))
+            },
+            onOutputDirSettings = {
+                requestSettings.launch(Intent(context, OutputDirectoryActivity::class.java))
+            },
+            onOutputDirOpen = {
+                try {
+                    context.startActivity(prefs.outputDirOrDefaultIntent)
+                } catch (_: ActivityNotFoundException) {
+                    viewModel.addAlert(SettingsAlert.DocumentsUINotFound)
+                }
+            },
+            onOutputFormatSettings = {
+                requestSettings.launch(Intent(context, OutputFormatActivity::class.java))
+            },
+            onMinDurationChange = { duration ->
+                prefs.minDuration = duration
+                reloadPrefs++
+            },
+            onWriteMetadataChange = { enabled ->
+                prefs.writeMetadata = enabled
+                reloadPrefs++
+            },
+            onRecordTelecomAppsChange = { enabled ->
+                prefs.recordTelecomApps = enabled
+                reloadPrefs++
+            },
+            onRecordDialingStateChange = { enabled ->
+                prefs.recordDialingState = enabled
+                reloadPrefs++
+            },
+            onNotificationOpenDirChange = { enabled ->
+                prefs.notificationOpenDir = enabled
+                reloadPrefs++
+            },
+            onShowLauncherIconChange = { enabled ->
+                prefs.showLauncherIcon = enabled
+                reloadPrefs++
+            },
+            onFloatingButtonChange = { enabled ->
+                if (!enabled) {
+                    prefs.floatingButtonEnabled = false
+                    reloadPrefs++
+                } else if (Settings.canDrawOverlays(context)) {
+                    prefs.floatingButtonEnabled = true
+                    reloadPrefs++
+                } else {
+                    requestOverlayPermission.launch(
+                        Intent(
+                            Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
+                            "package:${context.packageName}".toUri(),
+                        )
+                    )
+                }
+            },
+            onBackupSettings = {
+                requestSafBackup.launch("bcr_settings_backup.json")
+            },
+            onRestoreSettings = {
+                requestSafRestore.launch(arrayOf("application/json"))
+            },
+            onDebugModeChange = { enabled ->
+                prefs.isDebugMode = enabled
+                reloadPrefs++
+            },
+            onSourceRepoOpen = {
+                val uri = BuildConfig.PROJECT_URL_AT_COMMIT.toUri()
+                try {
+                    context.startActivity(Intent(Intent.ACTION_VIEW, uri))
+                } catch (_: ActivityNotFoundException) {
+                    viewModel.addAlert(SettingsAlert.BrowserNotFound)
+                }
+            },
+            onForceDirectBootChange = { enabled ->
+                prefs.forceDirectBoot = enabled
+                reloadPrefs++
+            },
+            onMigrateDirectBoot = {
+                context.startService(Intent(context, DirectBootMigrationService::class.java))
+            },
+            onSaveLogs = {
+                requestSafSaveLogs.launch(Logcat.FILENAME_DEFAULT)
+            },
+            contentPadding = params.contentPadding,
+        )
+    }
+
+    PreferencesChangedEffect(LocalLifecycleOwner.current) { key ->
+        // This can be changed by the quick settings tile.
+        if (key == Preferences.PREF_CALL_RECORDING) {
+            reloadPrefs++
+        }
+    }
+}
+
+@OptIn(ExperimentalMaterial3ExpressiveApi::class)
+@Composable
+private fun SettingsContent(
+    callRecording: Boolean,
+    outputDir: Uri,
+    retention: Retention,
+    savedFormat: Format.Companion.SavedFormat,
+    minDuration: Int,
+    writeMetadata: Boolean,
+    recordTelecomApps: Boolean,
+    recordDialingState: Boolean,
+    notificationOpenDir: Boolean,
+    showLauncherIcon: Boolean,
+    floatingButtonEnabled: Boolean,
+    isDebugMode: Boolean,
+    forceDirectBoot: Boolean,
+    onCallRecordingChange: (Boolean) -> Unit,
+    onRecordRulesSettings: () -> Unit,
+    onOutputDirSettings: () -> Unit,
+    onOutputDirOpen: () -> Unit,
+    onOutputFormatSettings: () -> Unit,
+    onMinDurationChange: (Int) -> Unit,
+    onWriteMetadataChange: (Boolean) -> Unit,
+    onRecordTelecomAppsChange: (Boolean) -> Unit,
+    onRecordDialingStateChange: (Boolean) -> Unit,
+    onNotificationOpenDirChange: (Boolean) -> Unit,
+    onShowLauncherIconChange: (Boolean) -> Unit,
+    onFloatingButtonChange: (Boolean) -> Unit,
+    onBackupSettings: () -> Unit,
+    onRestoreSettings: () -> Unit,
+    onDebugModeChange: (Boolean) -> Unit,
+    onSourceRepoOpen: () -> Unit,
+    onForceDirectBootChange: (Boolean) -> Unit,
+    onMigrateDirectBoot: () -> Unit,
+    onSaveLogs: () -> Unit,
+    contentPadding: PaddingValues = PaddingValues(),
+) {
+    var showMinDurationDialog by rememberSaveable { mutableStateOf(false) }
+    var showFloatingButtonHelp by rememberSaveable { mutableStateOf(false) }
+    var showModInfoDialog by rememberSaveable { mutableStateOf(false) }
+    val context = LocalContext.current
+
+    PreferenceColumn(contentPadding = contentPadding) {
+        item(key = "general") {
+            PreferenceCategory(
+                title = { Text(text = stringResource(R.string.pref_header_general)) },
+                modifier = Modifier.animateItem(),
+            )
+        }
+
+        item(key = "call_recording") {
+            SwitchPreference(
+                checked = callRecording,
+                onCheckedChange = onCallRecordingChange,
+                shapes = BetterSegmentedShapes.top(),
+                title = { Text(text = stringResource(R.string.pref_call_recording_name)) },
+                summary = { Text(text = stringResource(R.string.pref_call_recording_desc)) },
+                modifier = Modifier.animateItem(),
+            )
+        }
+
+        item(key = "floating_button") {
+            SwitchPreference(
+                checked = floatingButtonEnabled,
+                onCheckedChange = onFloatingButtonChange,
+                shapes = BetterSegmentedShapes.middle(),
+                title = {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text(text = stringResource(R.string.pref_floating_button_name))
+                        val helpDescription =
+                            stringResource(R.string.pref_floating_button_help_content_description)
+                        IconButton(
+                            onClick = { showFloatingButtonHelp = true },
+                            modifier = Modifier
+                                .size(32.dp)
+                                .clearAndSetSemantics { contentDescription = helpDescription },
+                        ) {
+                            Text(
+                                text = "\u24D8", // ⓘ
+                                color = MaterialTheme.colorScheme.primary,
+                                style = MaterialTheme.typography.titleMedium,
+                            )
+                        }
+                    }
+                },
+                summary = { Text(text = stringResource(R.string.pref_floating_button_desc)) },
+                modifier = Modifier.animateItem(),
+            )
+        }
+
+        item(key = "record_rules") {
+            Preference(
+                onClick = onRecordRulesSettings,
+                shapes = BetterSegmentedShapes.middle(),
+                title = { Text(text = stringResource(R.string.pref_record_rules_name)) },
+                summary = { Text(text = stringResource(R.string.pref_record_rules_desc)) },
+                modifier = Modifier.animateItem(),
+            )
+        }
+
+        item(key = "output_dir") {
+            Preference(
+                onClick = onOutputDirSettings,
+                onLongClick = onOutputDirOpen,
+                shapes = BetterSegmentedShapes.middle(),
+                title = { Text(text = stringResource(R.string.pref_output_dir_name)) },
+                summary = { Text(text = outputDirSummary(outputDir, retention)) },
+                modifier = Modifier.animateItem(),
+            )
+        }
+
+        item(key = "output_format") {
+            Preference(
+                onClick = onOutputFormatSettings,
+                shapes = BetterSegmentedShapes.bottom(),
+                title = { Text(text = stringResource(R.string.pref_output_format_name)) },
+                summary = { Text(text = outputFormatSummary(savedFormat)) },
+                modifier = Modifier.animateItem(),
+            )
+        }
+
+        item(key = "advanced") {
+            PreferenceGap(modifier = Modifier.animateItem())
+        }
+
+        item(key = "min_duration") {
+            Preference(
+                onClick = { showMinDurationDialog = true },
+                shapes = BetterSegmentedShapes.top(),
+                title = { Text(text = stringResource(R.string.pref_min_duration_name)) },
+                summary = { Text(text = minDurationSummary(minDuration)) },
+                modifier = Modifier.animateItem(),
+            )
+        }
+
+        item(key = "write_metadata") {
+            SwitchPreference(
+                checked = writeMetadata,
+                onCheckedChange = onWriteMetadataChange,
+                shapes = BetterSegmentedShapes.middle(),
+                title = { Text(text = stringResource(R.string.pref_write_metadata_name)) },
+                summary = { Text(text = stringResource(R.string.pref_write_metadata_desc)) },
+                modifier = Modifier.animateItem(),
+            )
+        }
+
+        item(key = "record_telecom_apps") {
+            SwitchPreference(
+                checked = recordTelecomApps,
+                onCheckedChange = onRecordTelecomAppsChange,
+                shapes = BetterSegmentedShapes.middle(),
+                title = { Text(text = stringResource(R.string.pref_record_telecom_apps_name)) },
+                summary = { Text(text = stringResource(R.string.pref_record_telecom_apps_desc)) },
+                modifier = Modifier.animateItem(),
+            )
+        }
+
+        item(key = "record_dialing_state") {
+            SwitchPreference(
+                checked = recordDialingState,
+                onCheckedChange = onRecordDialingStateChange,
+                shapes = BetterSegmentedShapes.middle(),
+                title = { Text(text = stringResource(R.string.pref_record_dialing_state_name)) },
+                summary = { Text(text = stringResource(R.string.pref_record_dialing_state_desc)) },
+                modifier = Modifier.animateItem(),
+            )
+        }
+
+        item(key = "notification_open_dir") {
+            SwitchPreference(
+                checked = notificationOpenDir,
+                onCheckedChange = onNotificationOpenDirChange,
+                shapes = BetterSegmentedShapes.middle(),
+                title = { Text(text = stringResource(R.string.pref_notification_open_dir_name)) },
+                summary = { Text(text = stringResource(R.string.pref_notification_open_dir_desc)) },
+                modifier = Modifier.animateItem(),
+            )
+        }
+
+        item(key = "show_launcher_icon") {
+            SwitchPreference(
+                checked = showLauncherIcon,
+                onCheckedChange = onShowLauncherIconChange,
+                shapes = BetterSegmentedShapes.bottom(),
+                title = { Text(text = stringResource(R.string.pref_show_launcher_icon_name)) },
+                summary = { Text(text = stringResource(R.string.pref_show_launcher_icon_desc)) },
+                modifier = Modifier.animateItem(),
+            )
+        }
+
+        item(key = "backup_header") {
+            PreferenceGap(modifier = Modifier.animateItem())
+        }
+
+        item(key = "backup") {
+            PreferenceCategory(
+                title = { Text(text = stringResource(R.string.pref_header_backup)) },
+                modifier = Modifier.animateItem(),
+            )
+        }
+
+        item(key = "backup_settings") {
+            Preference(
+                onClick = onBackupSettings,
+                shapes = BetterSegmentedShapes.top(),
+                title = { Text(text = stringResource(R.string.pref_backup_settings_name)) },
+                summary = { Text(text = stringResource(R.string.pref_backup_settings_desc)) },
+                modifier = Modifier.animateItem(),
+            )
+        }
+
+        item(key = "restore_settings") {
+            Preference(
+                onClick = onRestoreSettings,
+                shapes = BetterSegmentedShapes.bottom(),
+                title = { Text(text = stringResource(R.string.pref_restore_settings_name)) },
+                summary = { Text(text = stringResource(R.string.pref_restore_settings_desc)) },
+                modifier = Modifier.animateItem(),
+            )
+        }
+
+        item(key = "about") {
+            PreferenceCategory(
+                title = { Text(text = stringResource(R.string.pref_header_about)) },
+                modifier = Modifier.animateItem(),
+            )
+        }
+
+        item(key = "version") {
+            Preference(
+                onClick = onSourceRepoOpen,
+                onLongClick = { onDebugModeChange(!isDebugMode) },
+                shapes = BetterSegmentedShapes.top(),
+                title = { Text(text = stringResource(R.string.pref_version_name)) },
+                summary = { Text(text = versionSummary(isDebugMode)) },
+                modifier = Modifier.animateItem(),
+            )
+        }
+
+        item(key = "mod_info") {
+            Preference(
+                onClick = { showModInfoDialog = true },
+                shapes = BetterSegmentedShapes.bottom(),
+                title = { Text(text = stringResource(R.string.pref_mod_info_name)) },
+                summary = { Text(text = stringResource(R.string.pref_mod_info_desc)) },
+                modifier = Modifier.animateItem(),
+            )
+        }
+
+        if (isDebugMode) {
+            item(key = "debug") {
+                PreferenceCategory(
+                    title = { Text(text = stringResource(R.string.pref_header_debug)) },
+                    modifier = Modifier.animateItem(),
+                )
+            }
+
+            item(key = "force_direct_boot") {
+                SwitchPreference(
+                    checked = forceDirectBoot,
+                    onCheckedChange = onForceDirectBootChange,
+                    shapes = BetterSegmentedShapes.top(),
+                    title = { Text(text = stringResource(R.string.pref_force_direct_boot_name)) },
+                    summary = { Text(text = stringResource(R.string.pref_force_direct_boot_desc)) },
+                    modifier = Modifier.animateItem(),
+                )
+            }
+
+            item(key = "migrate_direct_boot") {
+                Preference(
+                    onClick = onMigrateDirectBoot,
+                    shapes = BetterSegmentedShapes.middle(),
+                    title = { Text(text = stringResource(R.string.pref_migrate_direct_boot_name)) },
+                    summary = { Text(text = stringResource(R.string.pref_migrate_direct_boot_desc)) },
+                    modifier = Modifier.animateItem(),
+                )
+            }
+
+            item(key = "save_logs") {
+                Preference(
+                    onClick = onSaveLogs,
+                    shapes = BetterSegmentedShapes.bottom(),
+                    title = { Text(text = stringResource(R.string.pref_save_logs_name)) },
+                    summary = { Text(text = stringResource(R.string.pref_save_logs_desc)) },
+                    modifier = Modifier.animateItem(),
+                )
+            }
+        }
+    }
+
+    if (showMinDurationDialog) {
+        MinDurationDialog(
+            minDuration = minDuration,
+            onSelect = { duration ->
+                onMinDurationChange(duration)
+                showMinDurationDialog = false
+            },
+            onDismiss = {
+                showMinDurationDialog = false
+            },
+        )
+    }
+
+    if (showFloatingButtonHelp) {
+        AlertDialog(
+            title = { Text(text = stringResource(R.string.pref_floating_button_help_title)) },
+            text = {
+                Text(
+                    text = stringResource(R.string.pref_floating_button_help_body),
+                    modifier = Modifier
+                        .verticalScroll(state = rememberScrollState())
+                        .padding(top = 8.dp),
+                )
+            },
+            onDismissRequest = { showFloatingButtonHelp = false },
+            confirmButton = {
+                TextButton(onClick = { showFloatingButtonHelp = false }) {
+                    Text(text = stringResource(android.R.string.ok))
+                }
+            },
+        )
+    }
+
+    if (showModInfoDialog) {
+        AlertDialog(
+            title = { Text(text = stringResource(R.string.pref_mod_info_dialog_title)) },
+            text = {
+                Column(
+                    modifier = Modifier.verticalScroll(state = rememberScrollState()),
+                    verticalArrangement = Arrangement.spacedBy(12.dp),
+                ) {
+                    Text(text = stringResource(R.string.pref_mod_info_dialog_body))
+
+                    Text(
+                        text = stringResource(R.string.pref_mod_info_original_repo),
+                        color = MaterialTheme.colorScheme.primary,
+                        modifier = Modifier.clickable {
+                            try {
+                                context.startActivity(
+                                    Intent(
+                                        Intent.ACTION_VIEW,
+                                        "https://github.com/chenxiaolong/BCR".toUri(),
+                                    )
+                                )
+                            } catch (e: ActivityNotFoundException) {
+                                // 忽略：设备上没有可用浏览器
+                            }
+                        },
+                    )
+
+                    Text(
+                        text = stringResource(R.string.pref_mod_info_this_repo),
+                        color = MaterialTheme.colorScheme.primary,
+                        modifier = Modifier.clickable {
+                            try {
+                                context.startActivity(
+                                    Intent(
+                                        Intent.ACTION_VIEW,
+                                        "https://github.com/aksb/BCR".toUri(),
+                                    )
+                                )
+                            } catch (e: ActivityNotFoundException) {
+                                // 忽略：设备上没有可用浏览器
+                            }
+                        },
+                    )
+                }
+            },
+            onDismissRequest = { showModInfoDialog = false },
+            confirmButton = {
+                TextButton(onClick = { showModInfoDialog = false }) {
+                    Text(text = stringResource(android.R.string.ok))
+                }
+            },
+        )
+    }
+}
+
+@Composable
+private fun outputDirSummary(outputDir: Uri, retention: Retention) = buildString {
+    append(stringResource(R.string.pref_output_dir_desc))
+    append("\n\n")
+    append(outputDir.formattedString)
+    append(stringResource(R.string.summary_separator))
+    append(retention.toFormattedString(LocalResources.current))
+}
+
+@Composable
+private fun outputFormatSummary(savedFormat: Format.Companion.SavedFormat) = buildString {
+    val resources = LocalResources.current
+
+    val formatParam = savedFormat.param ?: savedFormat.format.paramInfo.default
+    val sampleRate = savedFormat.sampleRate ?: savedFormat.format.sampleRateInfo.default
+
+    val separator = stringResource(R.string.summary_separator)
+
+    append(stringResource(R.string.pref_output_format_desc))
+    append("\n\n")
+    append(savedFormat.format.name)
+    append(separator)
+
+    when (val info = savedFormat.format.paramInfo) {
+        is RangedParamInfo -> {
+            append(info.format(resources, formatParam))
+            append(separator)
+        }
+        NoParamInfo -> {}
+    }
+
+    append(savedFormat.format.sampleRateInfo.format(resources, sampleRate))
+    append(separator)
+
+    append(stringResource(savedFormat.audioSource.nameResId))
+}
+
+@Composable
+private fun minDurationSummary(minDuration: Int) = if (minDuration == 0) {
+    stringResource(R.string.pref_min_duration_desc_zero)
+} else {
+    LocalResources.current.getQuantityString(
+        R.plurals.pref_min_duration_desc,
+        minDuration,
+        minDuration,
+    )
+}
+
+@Composable
+private fun versionSummary(isDebugMode: Boolean): String {
+    val suffix = if (isDebugMode) "+debugmode" else ""
+
+    return "${BuildConfig.VERSION_NAME} (${BuildConfig.BUILD_TYPE}${suffix})"
+}
+
+@Preview(
+    name = "Light Mode",
+    showBackground = true,
+)
+@Preview(
+    name = "Dark Mode",
+    uiMode = Configuration.UI_MODE_NIGHT_YES,
+    showBackground = true,
+)
+@Composable
+private fun PreviewSettingsScreen() {
+    val uri = DocumentsContract.buildTreeDocumentUri(DOCUMENTSUI_AUTHORITY, "primary:Recordings")
+    val format = Format.all.first()
+    val savedFormat = Format.Companion.SavedFormat(
+        format = format,
+        param = format.paramInfo.default,
+        sampleRate = format.sampleRateInfo.default,
+        audioSource = AudioSource.VOICE_UPLINK_DOWNLINK,
+    )
+
+    AppTheme {
+        AppScreen(
+            title = { Text(text = stringResource(R.string.app_name_full)) },
+        ) { params ->
+            SettingsContent(
+                callRecording = true,
+                outputDir = uri,
+                retention = DaysRetention(365U),
+                savedFormat = savedFormat,
+                minDuration = 5,
+                writeMetadata = true,
+                recordTelecomApps = false,
+                recordDialingState = false,
+                notificationOpenDir = false,
+                showLauncherIcon = true,
+                floatingButtonEnabled = false,
+                isDebugMode = true,
+                forceDirectBoot = false,
+                onCallRecordingChange = {},
+                onRecordRulesSettings = {},
+                onOutputDirSettings = {},
+                onOutputDirOpen = {},
+                onOutputFormatSettings = {},
+                onMinDurationChange = {},
+                onWriteMetadataChange = {},
+                onRecordTelecomAppsChange = {},
+                onRecordDialingStateChange = {},
+                onNotificationOpenDirChange = {},
+                onShowLauncherIconChange = {},
+                onFloatingButtonChange = {},
+                onBackupSettings = {},
+                onRestoreSettings = {},
+                onDebugModeChange = {},
+                onSourceRepoOpen = {},
+                onForceDirectBootChange = {},
+                onMigrateDirectBoot = {},
+                onSaveLogs = {},
+                contentPadding = params.contentPadding,
+            )
+        }
+    }
+}

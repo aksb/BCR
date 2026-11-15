@@ -1,0 +1,154 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+    SPDX-FileCopyrightText: 2022-2026 Andrew Gunnerson
+    SPDX-License-Identifier: GPL-3.0-only
+-->
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools">
+
+    <!-- This system app permission is required to capture the call audio stream -->
+    <uses-permission
+        android:name="android.permission.CAPTURE_AUDIO_OUTPUT"
+        tools:ignore="ProtectedPermissions" />
+    <!--
+         This system app permission is required to allow the telephony service to bind to this app's
+         InCallService without this app being a wearable companion app or the default dialer. This
+         method of monitoring incoming/outgoing calls is more reliable than listening for
+         PHONE_STATE broadcasts.
+    -->
+    <uses-permission
+        android:name="android.permission.CONTROL_INCALL_EXPERIENCE"
+        tools:ignore="ProtectedPermissions" />
+    <uses-permission android:name="android.permission.RECORD_AUDIO" />
+    <uses-permission android:name="android.permission.READ_CONTACTS" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE"
+        tools:ignore="ForegroundServicesPolicy" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MICROPHONE" />
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+    <uses-permission android:name="android.permission.READ_CALL_LOG"
+        tools:ignore="SmsAndCallLogPolicy" />
+    <uses-permission android:name="android.permission.READ_PHONE_STATE" />
+    <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
+    <uses-permission android:name="android.permission.VIBRATE" />
+    <!--
+         Used for the optional floating recording button shown during calls. FloatingButtonService
+         also uses FLAG_SHOW_WHEN_LOCKED on its overlay window so the button (and the ability to
+         reach the rest of the screen underneath it, e.g. the answer/decline buttons) still works
+         on top of a secure lock screen — that flag doesn't require any permission beyond this one.
+    -->
+    <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW" />
+
+    <application
+        android:name=".RecorderApplication"
+        android:allowBackup="true"
+        android:icon="@mipmap/ic_launcher"
+        android:label="@string/app_name"
+        android:enableOnBackInvokedCallback="true"
+        android:memtagMode="sync"
+        android:roundIcon="@mipmap/ic_launcher_round"
+        android:supportsRtl="true"
+        android:theme="@style/Theme.BCR"
+        tools:ignore="UnusedAttribute">
+
+        <service
+            android:name=".NotificationActionService"
+            android:exported="false" />
+
+        <receiver
+            android:name=".DirectBootMigrationReceiver"
+            android:exported="false">
+            <intent-filter>
+                <action android:name="android.intent.action.BOOT_COMPLETED" />
+            </intent-filter>
+        </receiver>
+
+        <service
+            android:name=".DirectBootMigrationService"
+            android:exported="false" />
+
+        <service
+            android:name=".RecorderInCallService"
+            android:exported="true"
+            android:foregroundServiceType="microphone"
+            android:directBootAware="true"
+            android:permission="android.permission.BIND_INCALL_SERVICE">
+            <meta-data
+                android:name="android.telecom.INCLUDE_SELF_MANAGED_CALLS"
+                android:value="true" />
+
+            <intent-filter>
+                <action android:name="android.telecom.InCallService" />
+            </intent-filter>
+        </service>
+
+        <service
+            android:name=".FloatingButtonService"
+            android:exported="false" />
+
+        <service
+            android:name=".RecorderTileService"
+            android:exported="true"
+            android:icon="@drawable/ic_launcher_quick_settings"
+            android:label="@string/quick_settings_label"
+            android:permission="android.permission.BIND_QUICK_SETTINGS_TILE">
+            <meta-data
+                android:name="android.service.quicksettings.TOGGLEABLE_TILE"
+                android:value="true" />
+            <intent-filter>
+                <action android:name="android.service.quicksettings.action.QS_TILE" />
+            </intent-filter>
+        </service>
+
+        <provider
+            android:authorities="@string/provider_authority"
+            android:name=".RecorderProvider"
+            android:exported="false"
+            android:grantUriPermissions="true">
+        </provider>
+
+        <activity
+            android:name=".rule.PickContactGroupActivity"
+            android:exported="false" />
+
+        <activity
+            android:name=".rule.RecordRuleEditorActivity"
+            android:exported="false" />
+
+        <activity
+            android:name=".rule.RecordRulesActivity"
+            android:exported="false" />
+
+        <activity
+            android:name=".settings.OutputDirectoryActivity"
+            android:exported="false" />
+
+        <activity
+            android:name=".settings.OutputFormatActivity"
+            android:exported="false" />
+
+        <activity
+            android:name=".settings.SettingsActivity"
+            android:exported="false" />
+
+        <activity-alias
+            android:name=".settings.SettingsActivityLauncher"
+            android:targetActivity=".settings.SettingsActivity"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity-alias>
+
+        <!-- Must be exported to work. -->
+        <receiver
+            android:name=".settings.DialerCodeReceiver"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.telephony.action.SECRET_CODE" />
+                <data android:scheme="android_secret_code" android:host="227" />
+            </intent-filter>
+        </receiver>
+    </application>
+</manifest>

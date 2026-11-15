@@ -1,0 +1,94 @@
+#!/sbin/sh
+
+# SPDX-FileCopyrightText: 2022-2024 Andrew Gunnerson
+# SPDX-License-Identifier: GPL-3.0-only
+
+OUTFD=${2}
+ZIPFILE=${3}
+
+umask 022
+
+ui_print() {
+    printf "ui_print %s\nui_print\n" "${*}" > /proc/self/fd/"${OUTFD}"
+}
+
+if [ -f /sbin/recovery ] || [ -f /system/bin/recovery ]; then
+    # Installing via recovery. Always do a direct install.
+    set -exu
+
+    ui_print 'Mounting system'
+
+    slot=$(getprop ro.boot.slot_suffix)
+
+    if [[ -e /dev/block/mapper/system"${slot}" ]]; then
+        ui_print "- Device uses dynamic partitions"
+        block_dev=/dev/block/mapper/system"${slot}"
+        blockdev --setrw "${block_dev}"
+    elif [[ -e /dev/block/bootdevice/by-name/system"${slot}" ]]; then
+        ui_print "- Device uses static partitions"
+        block_dev=/dev/block/bootdevice/by-name/system"${slot}"
+    else
+        ui_print "- System block device not found"
+        exit 1
+    fi
+
+    ui_print "- System block device: ${block_dev}"
+
+    if [[ -d /mnt/system ]]; then
+        mount_point=/mnt/system
+        root_dir=${mount_point}
+    elif [[ -d /system_root ]]; then
+        mount_point=/system_root
+        root_dir=${mount_point}
+    else
+        mount_point=/system
+        if [[ "$(getprop ro.build.system_root_image)" == true ]]; then
+            root_dir=${mount_point}
+        else
+            root_dir=/
+        fi
+    fi
+
+    ui_print "- System mount point: ${mount_point}"
+    ui_print "- Root directory: ${root_dir}"
+
+    if mountpoint -q "${mount_point}"; then
+        mount -o remount,rw "${mount_point}"
+    else
+        mount "${block_dev}" "${mount_point}"
+    fi
+
+    ui_print 'Extracting files'
+
+    # Just overwriting isn't sufficient because the apk filenames are different
+    # between debug and release builds
+    app_id=$(unzip -p "${ZIPFILE}" module.prop | grep '^id=' | cut -d= -f2)
+
+    # rm on some custom recoveries doesn't exit with 0 on ENOENT, even with -f
+    rm -rf "${root_dir}/system/priv-app/${app_id}" || :
+
+    unzip -o "${ZIPFILE}" 'system/*' -d "${root_dir}"
+
+    ui_print 'Done!'
+else
+    # Installing via Magisk Manager.
+
+    . /data/adb/magisk/util_functions.sh
+
+    has_overlays() {
+        local mnt="${1}" count
+        count=$(awk -v mnt="${mnt}" '$9 == "overlay" && $5 ~ mnt' /proc/self/mountinfo | wc -l)
+        [ "${count}" -gt 0 ]
+    }
+
+    # https://github.com/topjohnwu/Magisk/pull/6588
+    if [ -n "${MAGISK_VER_CODE}" ]; then
+        ui_print "Magisk version: ${MAGISK_VER_CODE}"
+        if has_overlays /system && [ "${MAGISK_VER_CODE}" -lt 26000 ]; then
+            ui_print "Magisk v26.0 (26000) or newer is required because this device uses overlayfs"
+            exit 1
+        fi
+    fi
+
+    install_module
+fi
